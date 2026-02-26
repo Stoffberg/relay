@@ -1,0 +1,7 @@
+{
+  "$schema": "https://knip.dev/reference/knip-config",
+  "project": ["src/**/*.{ts,tsx}"],
+  "ignore": ["**/*.d.ts", "dist/**"],
+  "ignoreDependencies": ["@types/*"],
+  "exclude": ["exports", "types"]
+}

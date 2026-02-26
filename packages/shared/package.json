@@ -1,0 +1,14 @@
+{
+  "name": "@relay/shared",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": ["src"],
+  "devDependencies": {
+    "@relay/config": "workspace:*",
+    "typescript": "^5"
+  }
+}

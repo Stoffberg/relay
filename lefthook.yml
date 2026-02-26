@@ -1,0 +1,12 @@
+pre-commit:
+  commands:
+    biome:
+      glob: "**/*.{ts,tsx,js,jsx,json}"
+      run: biome check --apply {staged_files}
+      pass_filename: true
+
+pre-push:
+  commands:
+    typecheck:
+      run: bun run check-types
+      skip: merge

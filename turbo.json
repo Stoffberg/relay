@@ -1,0 +1,32 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "globalEnv": ["NODE_ENV"],
+  "globalPassThroughEnv": ["CI"],
+  "tasks": {
+    "dev": {
+      "cache": false,
+      "interactive": true
+    },
+    "build": {
+      "outputs": ["dist/**", "build/**", ".next/**"],
+      "dependsOn": ["^build"]
+    },
+    "check-types": {
+      "cache": false
+    },
+    "test": {
+      "cache": false
+    },
+    "deploy": {
+      "dependsOn": ["^build"],
+      "cache": false,
+      "passThroughEnv": [
+        "FLY_ACCESS_TOKEN",
+        "FLY_NO_UPDATE_CHECK",
+        "FLYCTL_NO_TELEMETRY",
+        "CLOUDFLARE_API_TOKEN",
+        "CLOUDFLARE_ACCOUNT_ID"
+      ]
+    }
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "name": "relay-infra",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "deploy": "bun run --cwd ../../apps/web typecheck && bun run alchemy.run.ts",
+    "destroy": "bun run alchemy.run.ts --destroy"
+  },
+  "dependencies": {
+    "alchemy": "^0.82.1"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.0"
+  }
+}

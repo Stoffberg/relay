@@ -1,0 +1,14 @@
+[workspace]
+members = [
+    "apps/server",
+    "apps/agent",
+    "packages/spacetime"
+]
+resolver = "2"
+
+[profile.release]
+opt-level = 3
+lto = true
+strip = true
+
+[workspace.dependencies]

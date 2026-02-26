@@ -1,0 +1,11 @@
+[package]
+name = "relay"
+version = "0.1.0"
+
+[database]
+server = "maincloud"
+address = "maincloud.spacetimedb.com"
+database = "relay"
+
+[auth]
+token = "c2000841053526174364094af94464fc9993caef562a4977b46e42766fba8a21"

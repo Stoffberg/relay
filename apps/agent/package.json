@@ -1,0 +1,8 @@
+{
+  "name": "relay-agent",
+  "private": true,
+  "scripts": {
+    "build": "cargo build --release",
+    "start": "cargo run --release"
+  }
+}
