@@ -285,6 +285,25 @@ async fn main() -> Result<()> {
     ready_rx.await.expect("Subscription readiness signal failed");
     info!("SpacetimeDB client cache ready");
 
+    let stale_sessions: Vec<String> = conn
+        .db
+        .session()
+        .iter()
+        .filter(|s| s.status != "idle")
+        .map(|s| s.id.clone())
+        .collect();
+    for sid in &stale_sessions {
+        let _ = conn
+            .reducers
+            .update_session_status(sid.clone(), "idle".to_string());
+    }
+    if !stale_sessions.is_empty() {
+        info!(
+            "Reset {} stale session(s) to idle on startup",
+            stale_sessions.len()
+        );
+    }
+
     let state = Arc::new(AppState {
         openrouter_key: std::env::var("OPENROUTER_API_KEY").expect("OPENROUTER_API_KEY required"),
         openrouter_model: std::env::var("OPENROUTER_MODEL")
