@@ -25,15 +25,22 @@ pub async fn execute(command: &str, workdir: Option<&str>) -> Result<String> {
     if output.status.success() {
         let mut result = stdout.to_string();
         if !stderr.is_empty() {
-            result.push_str("\nstderr: ");
+            if !result.is_empty() && !result.ends_with('\n') {
+                result.push('\n');
+            }
             result.push_str(&stderr);
+        }
+        if result.trim().is_empty() {
+            result = "(command succeeded with no output)".to_string();
         }
         Ok(result)
     } else {
         let mut result = String::new();
         if !stdout.is_empty() {
             result.push_str(&stdout);
-            result.push('\n');
+            if !result.ends_with('\n') {
+                result.push('\n');
+            }
         }
         result.push_str(&format!("Exit code: {}\n", output.status.code().unwrap_or(-1)));
         if !stderr.is_empty() {
