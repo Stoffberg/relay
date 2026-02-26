@@ -480,36 +480,26 @@ fn find_next_unprocessed_message(state: &AppState, session_id: &str) -> Option<S
         .collect();
     user_msgs.sort_by_key(|m| m.created_at);
 
-    let mut assistant_msgs: Vec<_> = state
+    let assistant_count = state
         .conn
         .db
         .message()
         .iter()
         .filter(|m| m.session_id == session_id && m.role == "assistant")
-        .collect();
-    assistant_msgs.sort_by_key(|m| m.created_at);
+        .count();
 
-    let last_assistant_time = assistant_msgs.last().map(|m| m.created_at);
-
-    let unprocessed: Vec<_> = user_msgs
-        .into_iter()
-        .filter(|m| match last_assistant_time {
-            Some(t) => m.created_at > t,
-            None => true,
-        })
-        .collect();
-
-    if unprocessed.is_empty() {
+    if assistant_count >= user_msgs.len() {
         return None;
     }
 
-    let msg_id = &unprocessed[0].id;
+    let next_user_msg = &user_msgs[assistant_count];
+
     let parts: Vec<_> = state
         .conn
         .db
         .message_part()
         .iter()
-        .filter(|p| p.message_id == *msg_id)
+        .filter(|p| p.message_id == next_user_msg.id)
         .collect();
 
     let mut sorted_parts = parts;
