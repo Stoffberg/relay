@@ -468,7 +468,17 @@ async fn run_agent_loop(
     let mut conversation = vec![LLMMessage {
         role: "system".to_string(),
         content: Some(
-            "You are Relay, a helpful AI coding assistant. You have access to tools that can read, write, and edit files on the user's local machine, execute shell commands, and search codebases. Use these tools when the user asks you to make changes or explore their code. Keep explanations concise.".to_string(),
+            r#"You are Relay, an AI coding agent running on the user's local machine. You have direct access to their filesystem and shell via tools.
+
+Core behavior:
+- Be proactive. If you need information, use your tools to get it. Never ask the user for file paths, system info, or directory listings when you can discover them yourself.
+- Start by orienting yourself: use shell_exec to run commands like `echo ~`, `whoami`, `uname`, `pwd`, or `ls` to understand the environment.
+- When the user says "my downloads folder" or "this project", figure out what they mean using your tools. Don't ask them to provide paths.
+- Use tools aggressively. Read files, list directories, search codebases, run commands. Act first, explain after.
+- Keep explanations concise. Show results, not process narration.
+- When making changes to code, read the existing code first to match patterns and style.
+- If a tool call fails, try a different approach before asking the user for help.
+- You can chain multiple tool calls in sequence. Don't stop after one tool call if the task isn't done."#.to_string(),
         ),
         tool_calls: None,
         tool_call_id: None,
@@ -709,6 +719,15 @@ async fn dispatch_tool_call(
     agent_id: &str,
     tool_call: &ToolCall,
 ) -> Result<String> {
+    let pre_max_id = state
+        .conn
+        .db
+        .tool_command()
+        .iter()
+        .map(|c| c.id)
+        .max()
+        .unwrap_or(0);
+
     if let Err(e) = state.conn.reducers.create_tool_command(
         message_id.to_string(),
         session_id.to_string(),
@@ -720,6 +739,26 @@ async fn dispatch_tool_call(
     }
 
     tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+
+    let cmd_id = state
+        .conn
+        .db
+        .tool_command()
+        .iter()
+        .filter(|c| {
+            c.id > pre_max_id
+                && c.message_id == message_id
+                && c.tool_name == tool_call.function.name
+        })
+        .map(|c| c.id)
+        .max();
+
+    let cmd_id = match cmd_id {
+        Some(id) => id,
+        None => {
+            return Ok("Tool command was not created (agent may be offline)".to_string());
+        }
+    };
 
     let timeout = std::time::Duration::from_secs(120);
     let start = std::time::Instant::now();
@@ -734,20 +773,15 @@ async fn dispatch_tool_call(
             .db
             .tool_command()
             .iter()
-            .find(|c| {
-                c.session_id == session_id
-                    && c.tool_name == tool_call.function.name
-                    && c.tool_args == tool_call.function.arguments
-                    && (c.status == "completed" || c.status == "error")
-            });
+            .find(|c| c.id == cmd_id && (c.status == "completed" || c.status == "error"));
 
-        if let Some(cmd) = maybe_cmd {
+        if maybe_cmd.is_some() {
             let result = state
                 .conn
                 .db
                 .tool_result()
                 .iter()
-                .find(|r| r.tool_command_id == cmd.id);
+                .find(|r| r.tool_command_id == cmd_id);
 
             if let Some(result) = result {
                 if result.success {
