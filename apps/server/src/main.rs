@@ -620,8 +620,8 @@ fn fetch_history(conn: &DbConnection, session_id: &str) -> Vec<LLMMessage> {
                         .find(|r| r.tool_command_id == cmd.id)
                         .map(|r| {
                             if r.success {
-                                if r.output.len() > 2000 {
-                                    format!("{}... (truncated)", &r.output[..2000])
+                                if r.output.len() > 30000 {
+                                    format!("{}... (truncated)", &r.output[..30000])
                                 } else {
                                     r.output.clone()
                                 }
@@ -1019,8 +1019,8 @@ async fn dispatch_tool_call(
 
             if let Some(result) = result {
                 if result.success {
-                    let output = if result.output.len() > 10000 {
-                        format!("{}... (truncated)", &result.output[..10000])
+                    let output = if result.output.len() > 30000 {
+                        format!("{}... (truncated)", &result.output[..30000])
                     } else {
                         result.output.clone()
                     };
