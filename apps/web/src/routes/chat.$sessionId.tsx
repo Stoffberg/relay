@@ -41,7 +41,7 @@ function ChatPage() {
   const store = storeRef.current;
 
   const messageIds = useSyncExternalStore(store.subscribeToList, store.getListSnapshot);
-  const { busy, showThinking, sessionStatus } = useSyncExternalStore(store.subscribeToStatus, store.getStatusSnapshot);
+  const { showThinking, sessionStatus } = useSyncExternalStore(store.subscribeToStatus, store.getStatusSnapshot);
 
   useEffect(() => () => { storeRef.current?.destroy(); }, []);
 
@@ -54,7 +54,7 @@ function ChatPage() {
 
   const sendMessage = useCallback(async () => {
     const text = input.trim();
-    if (!text || busy) return;
+    if (!text) return;
 
     const userMsgId = crypto.randomUUID();
     setInput("");
@@ -98,7 +98,7 @@ function ChatPage() {
         status: "error",
       });
     }
-  }, [input, busy, store, sessionId, scrollToBottom]);
+  }, [input, store, sessionId, scrollToBottom]);
 
   if (!ready) {
     return (
@@ -165,7 +165,7 @@ function ChatPage() {
         input={input}
         onInputChange={setInput}
         onSend={sendMessage}
-        disabled={busy || !ready}
+        disabled={!ready}
         showThinking={showThinking}
         ready={ready}
         sessionId={sessionId}

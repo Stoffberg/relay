@@ -49,7 +49,7 @@ export function InputBar({
             value={input}
             onChange={handleChange}
             onKeyDown={handleKeyDown}
-            placeholder={!ready ? "Connecting..." : showThinking ? "Message will be queued..." : "Message..."}
+            placeholder={!ready ? "Connecting..." : showThinking ? "Send another message..." : "Message..."}
             disabled={disabled}
             rows={1}
             className="flex-1 text-[14px] focus:outline-none resize-none bg-transparent text-foreground caret-accent placeholder:text-muted disabled:opacity-40"

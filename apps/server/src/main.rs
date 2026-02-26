@@ -15,6 +15,7 @@ use module_bindings::{
 };
 use serde::{Deserialize, Serialize};
 use spacetimedb_sdk::{DbContext, Table};
+use std::collections::HashSet;
 use std::sync::Arc;
 use tokio::sync::oneshot;
 use tower_http::cors::CorsLayer;
@@ -25,6 +26,7 @@ pub struct AppState {
     openrouter_model: String,
     http: reqwest::Client,
     conn: DbConnection,
+    active_sessions: std::sync::Mutex<HashSet<String>>,
 }
 
 #[derive(Deserialize)]
@@ -289,6 +291,7 @@ async fn main() -> Result<()> {
             .unwrap_or_else(|_| "anthropic/claude-3.5-sonnet".to_string()),
         http: reqwest::Client::new(),
         conn,
+        active_sessions: std::sync::Mutex::new(HashSet::new()),
     });
 
     let app = Router::new()
@@ -366,24 +369,26 @@ async fn chat_handler(
             .update_session_title(session_id.clone(), title);
     }
 
-    let _ = state
-        .conn
-        .reducers
-        .update_session_status(session_id.clone(), "streaming".to_string());
+    let should_start_loop = {
+        let mut active = state.active_sessions.lock().unwrap();
+        active.insert(session_id.clone())
+    };
 
-    let state_clone = state.clone();
-    let session_clone = session_id.clone();
-    let user_message = payload.message.clone();
-
-    tokio::spawn(async move {
-        if let Err(e) = run_agent_loop(&state_clone, &session_clone, &user_message).await {
-            tracing::error!("Agent loop failed: {e}");
-        }
-        let _ = state_clone
+    if should_start_loop {
+        let _ = state
             .conn
             .reducers
-            .update_session_status(session_clone, "idle".to_string());
-    });
+            .update_session_status(session_id.clone(), "streaming".to_string());
+
+        let state_clone = state.clone();
+        let session_clone = session_id.clone();
+
+        tokio::spawn(async move {
+            run_session_queue(&state_clone, &session_clone).await;
+        });
+    } else {
+        info!("Message queued for session {session_id} (agent loop already running)");
+    }
 
     (
         StatusCode::OK,
@@ -392,6 +397,94 @@ async fn chat_handler(
             session_id,
         })),
     )
+}
+
+async fn run_session_queue(state: &AppState, session_id: &str) {
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+
+    loop {
+        let next_message = find_next_unprocessed_message(state, session_id);
+
+        let user_message = match next_message {
+            Some(msg) => msg,
+            None => break,
+        };
+
+        let _ = state
+            .conn
+            .reducers
+            .update_session_status(session_id.to_string(), "streaming".to_string());
+
+        if let Err(e) = run_agent_loop(state, session_id, &user_message).await {
+            tracing::error!("Agent loop failed: {e}");
+        }
+
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    }
+
+    let _ = state
+        .conn
+        .reducers
+        .update_session_status(session_id.to_string(), "idle".to_string());
+
+    state
+        .active_sessions
+        .lock()
+        .unwrap()
+        .remove(session_id);
+}
+
+fn find_next_unprocessed_message(state: &AppState, session_id: &str) -> Option<String> {
+    let mut user_msgs: Vec<_> = state
+        .conn
+        .db
+        .message()
+        .iter()
+        .filter(|m| m.session_id == session_id && m.role == "user")
+        .collect();
+    user_msgs.sort_by_key(|m| m.created_at);
+
+    let mut assistant_msgs: Vec<_> = state
+        .conn
+        .db
+        .message()
+        .iter()
+        .filter(|m| m.session_id == session_id && m.role == "assistant")
+        .collect();
+    assistant_msgs.sort_by_key(|m| m.created_at);
+
+    let last_assistant_time = assistant_msgs.last().map(|m| m.created_at);
+
+    let unprocessed: Vec<_> = user_msgs
+        .into_iter()
+        .filter(|m| match last_assistant_time {
+            Some(t) => m.created_at > t,
+            None => true,
+        })
+        .collect();
+
+    if unprocessed.is_empty() {
+        return None;
+    }
+
+    let msg_id = &unprocessed[0].id;
+    let parts: Vec<_> = state
+        .conn
+        .db
+        .message_part()
+        .iter()
+        .filter(|p| p.message_id == *msg_id)
+        .collect();
+
+    let mut sorted_parts = parts;
+    sorted_parts.sort_by_key(|p| p.part_index);
+    let content: String = sorted_parts.iter().map(|p| p.content.as_str()).collect();
+
+    if content.is_empty() {
+        return None;
+    }
+
+    Some(content)
 }
 
 fn fetch_history(conn: &DbConnection, session_id: &str) -> Vec<LLMMessage> {
@@ -541,7 +634,7 @@ fn find_agent_id(conn: &DbConnection) -> Option<String> {
 async fn run_agent_loop(
     state: &AppState,
     session_id: &str,
-    initial_message: &str,
+    _user_message: &str,
 ) -> Result<()> {
     let history = fetch_history(&state.conn, session_id);
     let use_tools = has_online_agent(&state.conn);
@@ -565,12 +658,6 @@ Core behavior:
         tool_call_id: None,
     }];
     conversation.extend(history);
-    conversation.push(LLMMessage {
-        role: "user".to_string(),
-        content: Some(initial_message.to_string()),
-        tool_calls: None,
-        tool_call_id: None,
-    });
 
     let max_iterations = 20;
     for iteration in 0..max_iterations {

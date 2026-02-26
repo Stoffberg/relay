@@ -314,7 +314,7 @@ export class ChatSessionStore {
     const lastId = this.messageIds.at(-1);
     const lastMsg = lastId ? this.messageMap.get(lastId) : undefined;
     const showThinking = lastMsg
-      ? lastMsg.status === "optimistic" || (lastMsg.role === "user" && this.awaitingResponse)
+      ? lastMsg.status === "optimistic" || (lastMsg.role === "user" && busy)
       : false;
 
     if (
