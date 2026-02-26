@@ -2,6 +2,6 @@
   "name": "relay-server",
   "private": true,
   "scripts": {
-    "deploy": "FLY_NO_UPDATE_CHECK=1 FLYCTL_NO_TELEMETRY=1 flyctl deploy"
+    "deploy": "FLY_NO_UPDATE_CHECK=1 FLYCTL_NO_TELEMETRY=1 flyctl deploy --remote-only --depot=false"
   }
 }

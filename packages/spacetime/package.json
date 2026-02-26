@@ -2,6 +2,6 @@
   "name": "relay-spacetime",
   "private": true,
   "scripts": {
-    "deploy": "PATH=$HOME/.cargo/bin:$PATH spacetime publish relay --yes --delete-data"
+    "deploy": "PATH=$HOME/.cargo/bin:$PATH $HOME/.local/bin/spacetime publish relay --yes --delete-data"
   }
 }

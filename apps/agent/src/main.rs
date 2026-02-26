@@ -29,6 +29,21 @@ enum Commands {
     Setup,
     #[command(about = "Show current configuration")]
     Config,
+    #[command(about = "Start the agent as a background process")]
+    Start,
+    #[command(about = "Stop the background agent")]
+    Stop,
+    #[command(about = "Show agent status")]
+    Status,
+    #[command(about = "Show agent logs")]
+    Logs {
+        #[arg(short, long, help = "Follow log output")]
+        follow: bool,
+        #[arg(short, long, default_value = "50", help = "Number of lines to show")]
+        lines: usize,
+    },
+    #[command(about = "Run the agent in the foreground")]
+    Run,
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Clone)]
@@ -49,16 +64,24 @@ impl Default for AgentConfig {
 }
 
 fn config_path() -> PathBuf {
-    config_dir().join("config.toml")
+    state_dir().join("config.toml")
 }
 
-fn config_dir() -> PathBuf {
+fn state_dir() -> PathBuf {
     let dir = home::home_dir()
         .unwrap_or_else(|| PathBuf::from("."))
         .join(".config")
         .join("relay");
     std::fs::create_dir_all(&dir).ok();
     dir
+}
+
+fn pid_path() -> PathBuf {
+    state_dir().join("agent.pid")
+}
+
+fn log_path() -> PathBuf {
+    state_dir().join("agent.log")
 }
 
 fn load_config() -> Option<AgentConfig> {
@@ -72,6 +95,15 @@ fn save_config(config: &AgentConfig) -> Result<()> {
     let content = toml::to_string_pretty(config)?;
     std::fs::write(&path, content)?;
     Ok(())
+}
+
+fn read_pid() -> Option<u32> {
+    let content = std::fs::read_to_string(pid_path()).ok()?;
+    content.trim().parse().ok()
+}
+
+fn is_process_running(pid: u32) -> bool {
+    unsafe { libc::kill(pid as i32, 0) == 0 }
 }
 
 fn run_setup() -> Result<()> {
@@ -102,7 +134,7 @@ fn run_setup() -> Result<()> {
 
     save_config(&config)?;
     println!("\n  Config saved to {}", config_path().display());
-    println!("  Run `relay` to start the agent.\n");
+    println!("  Run `relay start` to start the agent.\n");
     Ok(())
 }
 
@@ -120,6 +152,124 @@ fn show_config() {
     }
 }
 
+fn cmd_start() -> Result<()> {
+    if let Some(pid) = read_pid() {
+        if is_process_running(pid) {
+            println!("\n  Agent already running (PID {})\n", pid);
+            return Ok(());
+        }
+    }
+
+    let config = match load_config() {
+        Some(c) => c,
+        None => {
+            eprintln!("  No config found. Run `relay setup` first.");
+            return Ok(());
+        }
+    };
+
+    let exe = std::env::current_exe()?;
+    let log_file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(log_path())?;
+    let log_err = log_file.try_clone()?;
+
+    let child = std::process::Command::new(exe)
+        .arg("run")
+        .stdout(log_file)
+        .stderr(log_err)
+        .stdin(std::process::Stdio::null())
+        .spawn()?;
+
+    let pid = child.id();
+    std::fs::write(pid_path(), pid.to_string())?;
+
+    println!("\n  Agent started (PID {})", pid);
+    println!("  Database:  {}", config.spacetime_db);
+    println!("  Name:      {}", config.agent_name);
+    println!("  Logs:      {}", log_path().display());
+    println!("  Stop with: relay stop\n");
+    Ok(())
+}
+
+fn cmd_stop() -> Result<()> {
+    match read_pid() {
+        Some(pid) if is_process_running(pid) => {
+            unsafe { libc::kill(pid as i32, libc::SIGTERM) };
+
+            for _ in 0..20 {
+                std::thread::sleep(std::time::Duration::from_millis(100));
+                if !is_process_running(pid) {
+                    break;
+                }
+            }
+
+            if is_process_running(pid) {
+                unsafe { libc::kill(pid as i32, libc::SIGKILL) };
+            }
+
+            std::fs::remove_file(pid_path()).ok();
+            println!("\n  Agent stopped (was PID {})\n", pid);
+        }
+        Some(_) => {
+            std::fs::remove_file(pid_path()).ok();
+            println!("\n  Agent not running (stale PID file cleaned up)\n");
+        }
+        None => {
+            println!("\n  Agent not running\n");
+        }
+    }
+    Ok(())
+}
+
+fn cmd_status() -> Result<()> {
+    match read_pid() {
+        Some(pid) if is_process_running(pid) => {
+            let config = load_config().unwrap_or_default();
+            println!("\n  Agent running (PID {})\n", pid);
+            println!("  SpacetimeDB URL:  {}", config.spacetime_url);
+            println!("  Database:         {}", config.spacetime_db);
+            println!("  Agent name:       {}", config.agent_name);
+            println!("  Logs:             {}\n", log_path().display());
+        }
+        Some(_) => {
+            std::fs::remove_file(pid_path()).ok();
+            println!("\n  Agent not running (stale PID file cleaned up)\n");
+        }
+        None => {
+            println!("\n  Agent not running\n");
+        }
+    }
+    Ok(())
+}
+
+fn cmd_logs(follow: bool, lines: usize) -> Result<()> {
+    let path = log_path();
+    if !path.exists() {
+        println!("\n  No logs found at {}\n", path.display());
+        return Ok(());
+    }
+
+    if follow {
+        let status = std::process::Command::new("tail")
+            .args(["-f", "-n", &lines.to_string()])
+            .arg(&path)
+            .status()?;
+        if !status.success() {
+            anyhow::bail!("tail exited with {}", status);
+        }
+    } else {
+        let content = std::fs::read_to_string(&path)?;
+        let all_lines: Vec<&str> = content.lines().collect();
+        let start = all_lines.len().saturating_sub(lines);
+        for line in &all_lines[start..] {
+            println!("{}", line);
+        }
+    }
+    Ok(())
+}
+
 struct AgentState {
     agent_id: String,
     conn: DbConnection,
@@ -135,21 +285,25 @@ async fn main() -> Result<()> {
             show_config();
             return Ok(());
         }
-        None => {}
+        Some(Commands::Start) => return cmd_start(),
+        Some(Commands::Stop) => return cmd_stop(),
+        Some(Commands::Status) => return cmd_status(),
+        Some(Commands::Logs { follow, lines }) => return cmd_logs(follow, lines),
+        Some(Commands::Run) | None => {}
     }
 
     let config = match load_config() {
         Some(c) => c,
         None => {
-            eprintln!("No config found. Running setup first...\n");
-            run_setup()?;
-            load_config().ok_or_else(|| anyhow::anyhow!("Setup failed"))?
+            eprintln!("No config found. Run `relay setup` first.\n");
+            return Ok(());
         }
     };
 
     tracing_subscriber::fmt()
         .with_target(false)
         .with_thread_ids(false)
+        .with_ansi(atty::is(atty::Stream::Stdout))
         .init();
 
     let agent_id = format!("agent-{}", &uuid::Uuid::new_v4().to_string()[..8]);
