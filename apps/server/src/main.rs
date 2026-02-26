@@ -694,8 +694,13 @@ Tool results:
 - When a tool succeeds, the result IS the output. Trust it. Do not second-guess successful tool calls.
 - shell_exec runs commands on the user's actual machine. If you get output back, the command ran successfully.
 - Many CLI tools (cargo, npm, git) write informational messages to stderr. This is normal, not an error.
+- Only report what you did and the outcome. Never say you "can't" do something you just did successfully.
 - After completing a task successfully, stop. Do not re-verify or re-attempt something that already worked.
-- Only report what you did and the outcome. Never say you "can't" do something you just did successfully."#.to_string(),
+
+Verification:
+- ALWAYS test your work before telling the user you're done. If you wrote code, run it. If you edited a file, verify the result.
+- Never describe what code "will do" without actually running it first. Execute it, confirm it works, then report the result.
+- If something fails, fix it and test again. Only report success after you've seen it succeed."#.to_string(),
         ),
         tool_calls: None,
         tool_call_id: None,
