@@ -427,22 +427,103 @@ fn fetch_history(conn: &DbConnection, session_id: &str) -> Vec<LLMMessage> {
         parts_vec.sort_by_key(|p| p.part_index);
     }
 
-    messages
+    let tool_commands: Vec<_> = conn
+        .db
+        .tool_command()
         .iter()
-        .filter_map(|m| {
-            let parts = content_by_msg.get(m.id.as_str())?;
-            let content: String = parts.iter().map(|p| p.content.as_str()).collect();
-            if content.is_empty() {
-                return None;
+        .filter(|c| c.session_id == session_id)
+        .collect();
+
+    let tool_results: Vec<_> = conn.db.tool_result().iter().collect();
+
+    let mut result = Vec::new();
+
+    for m in &messages {
+        let text = content_by_msg
+            .get(m.id.as_str())
+            .map(|parts| {
+                parts
+                    .iter()
+                    .map(|p| p.content.as_str())
+                    .collect::<String>()
+            })
+            .unwrap_or_default();
+
+        if m.role == "assistant" {
+            let msg_tool_calls: Vec<_> = tool_commands
+                .iter()
+                .filter(|c| c.message_id == m.id)
+                .collect();
+
+            if msg_tool_calls.is_empty() {
+                if !text.is_empty() {
+                    result.push(LLMMessage {
+                        role: "assistant".to_string(),
+                        content: Some(text),
+                        tool_calls: None,
+                        tool_call_id: None,
+                    });
+                }
+            } else {
+                let tc: Vec<ToolCall> = msg_tool_calls
+                    .iter()
+                    .enumerate()
+                    .map(|(_i, c)| ToolCall {
+                        id: format!("call_{}", c.id),
+                        call_type: "function".to_string(),
+                        function: ToolCallFunction {
+                            name: c.tool_name.clone(),
+                            arguments: c.tool_args.clone(),
+                        },
+                    })
+                    .collect();
+
+                result.push(LLMMessage {
+                    role: "assistant".to_string(),
+                    content: if text.is_empty() { None } else { Some(text) },
+                    tool_calls: Some(tc.clone()),
+                    tool_call_id: None,
+                });
+
+                for (i, cmd) in msg_tool_calls.iter().enumerate() {
+                    let tool_output = tool_results
+                        .iter()
+                        .find(|r| r.tool_command_id == cmd.id)
+                        .map(|r| {
+                            if r.success {
+                                if r.output.len() > 2000 {
+                                    format!("{}... (truncated)", &r.output[..2000])
+                                } else {
+                                    r.output.clone()
+                                }
+                            } else {
+                                format!(
+                                    "Error: {}",
+                                    r.error.clone().unwrap_or_else(|| r.output.clone())
+                                )
+                            }
+                        })
+                        .unwrap_or_else(|| "Tool did not return a result".to_string());
+
+                    result.push(LLMMessage {
+                        role: "tool".to_string(),
+                        content: Some(tool_output),
+                        tool_calls: None,
+                        tool_call_id: Some(tc[i].id.clone()),
+                    });
+                }
             }
-            Some(LLMMessage {
+        } else if !text.is_empty() {
+            result.push(LLMMessage {
                 role: m.role.clone(),
-                content: Some(content),
+                content: Some(text),
                 tool_calls: None,
                 tool_call_id: None,
-            })
-        })
-        .collect()
+            });
+        }
+    }
+
+    result
 }
 
 fn has_online_agent(conn: &DbConnection) -> bool {
@@ -631,9 +712,20 @@ async fn stream_llm_response(
     let mut full_text = String::new();
     let mut tool_calls: Vec<ToolCall> = Vec::new();
     let mut finish_reason: Option<String> = None;
+    let stream_timeout = std::time::Duration::from_secs(15);
 
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk?;
+    loop {
+        let maybe_chunk = tokio::time::timeout(stream_timeout, stream.next()).await;
+
+        let chunk = match maybe_chunk {
+            Err(_) => {
+                tracing::warn!("Stream timed out (no data for 15s)");
+                break;
+            }
+            Ok(None) => break,
+            Ok(Some(c)) => c?,
+        };
+
         let text = String::from_utf8_lossy(&chunk);
         line_buffer.push_str(&text);
 
