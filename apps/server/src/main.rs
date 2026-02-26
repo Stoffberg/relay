@@ -292,14 +292,9 @@ async fn main() -> Result<()> {
         .filter(|s| s.status != "idle")
         .map(|s| s.id.clone())
         .collect();
-    for sid in &stale_sessions {
-        let _ = conn
-            .reducers
-            .update_session_status(sid.clone(), "idle".to_string());
-    }
     if !stale_sessions.is_empty() {
         info!(
-            "Reset {} stale session(s) to idle on startup",
+            "Found {} stale session(s) to recover on startup",
             stale_sessions.len()
         );
     }
@@ -312,6 +307,19 @@ async fn main() -> Result<()> {
         conn,
         active_sessions: std::sync::Mutex::new(HashSet::new()),
     });
+
+    for sid in stale_sessions {
+        let state_clone = state.clone();
+        info!("Recovering stale session: {sid}");
+        state
+            .active_sessions
+            .lock()
+            .unwrap()
+            .insert(sid.clone());
+        tokio::spawn(async move {
+            run_session_queue(&state_clone, &sid).await;
+        });
+    }
 
     let app = Router::new()
         .route("/health", axum::routing::get(health))

@@ -53,6 +53,15 @@ function RootShell({ children }: { children: React.ReactNode }) {
   );
 }
 
+function extractTimestamp(ts: unknown): number {
+  if (ts instanceof Date) return ts.getTime();
+  if (typeof ts === "number") return ts;
+  if (ts && typeof ts === "object" && "__timestamp_micros_since_unix_epoch__" in ts) {
+    return Number((ts as { __timestamp_micros_since_unix_epoch__: bigint }).__timestamp_micros_since_unix_epoch__ / 1000n);
+  }
+  return 0;
+}
+
 function buildSessionPreview(session: Session): SessionPreview {
   const messages = getMessagesForSession(session.id);
 
@@ -60,8 +69,8 @@ function buildSessionPreview(session: Session): SessionPreview {
     id: session.id,
     title: session.title || "New chat",
     status: session.status as SessionPreview["status"],
-    createdAt: session.createdAt instanceof Date ? session.createdAt.getTime() : Number(session.createdAt),
-    updatedAt: session.updatedAt instanceof Date ? session.updatedAt.getTime() : Number(session.updatedAt),
+    createdAt: extractTimestamp(session.createdAt),
+    updatedAt: extractTimestamp(session.updatedAt),
     messageCount: messages.length,
   };
 }

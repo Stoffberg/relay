@@ -38,13 +38,18 @@ export interface ChatStatus {
   sessionStatus: SessionStatus;
 }
 
+function extractTimestamp(ts: unknown): number {
+  if (ts instanceof Date) return ts.getTime();
+  if (typeof ts === "number") return ts;
+  if (ts && typeof ts === "object" && "__timestamp_micros_since_unix_epoch__" in ts) {
+    return Number((ts as { __timestamp_micros_since_unix_epoch__: bigint }).__timestamp_micros_since_unix_epoch__ / 1000n);
+  }
+  return 0;
+}
+
 function buildChatMessagesFromCache(sessionId: string): ChatMessage[] {
   const messages = getMessagesForSession(sessionId);
-  messages.sort((a, b) => {
-    const aTime = a.createdAt instanceof Date ? a.createdAt.getTime() : Number(a.createdAt);
-    const bTime = b.createdAt instanceof Date ? b.createdAt.getTime() : Number(b.createdAt);
-    return aTime - bTime;
-  });
+  messages.sort((a, b) => extractTimestamp(a.createdAt) - extractTimestamp(b.createdAt));
 
   return messages.map((m) => {
     const parts = getPartsForMessage(m.id);
