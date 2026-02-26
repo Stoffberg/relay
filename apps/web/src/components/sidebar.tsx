@@ -142,7 +142,7 @@ export function Sidebar({
               >
                 <div className="flex items-center gap-0 px-5 py-3">
                   <span className="text-[10px] w-5 shrink-0 tabular-nums font-mono text-dim">
-                    {String(rowIdx + 1).padStart(2, "0")}
+                    {String(sessions.length - rowIdx).padStart(2, "0")}
                   </span>
                   <div className="flex-1 min-w-0 pl-2">
                     <div className="flex items-center justify-between mb-0.5">

@@ -427,10 +427,8 @@ async fn chat_handler(
 }
 
 async fn run_session_queue(state: &AppState, session_id: &str) {
-    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
-
     loop {
-        let next_message = find_next_unprocessed_message(state, session_id);
+        let next_message = poll_for_next_message(state, session_id).await;
 
         let user_message = match next_message {
             Some(msg) => msg,
@@ -459,6 +457,17 @@ async fn run_session_queue(state: &AppState, session_id: &str) {
         .lock()
         .unwrap()
         .remove(session_id);
+}
+
+async fn poll_for_next_message(state: &AppState, session_id: &str) -> Option<String> {
+    for _ in 0..20 {
+        let result = find_next_unprocessed_message(state, session_id);
+        if result.is_some() {
+            return result;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+    }
+    None
 }
 
 fn find_next_unprocessed_message(state: &AppState, session_id: &str) -> Option<String> {
@@ -661,7 +670,7 @@ fn find_agent_id(conn: &DbConnection) -> Option<String> {
 async fn run_agent_loop(
     state: &AppState,
     session_id: &str,
-    _user_message: &str,
+    user_message: &str,
 ) -> Result<()> {
     let history = fetch_history(&state.conn, session_id);
     let use_tools = has_online_agent(&state.conn);
@@ -685,6 +694,18 @@ Core behavior:
         tool_call_id: None,
     }];
     conversation.extend(history);
+
+    let last_is_user = conversation.last().map_or(false, |m| {
+        m.role == "user" && m.content.as_deref() == Some(user_message)
+    });
+    if !last_is_user {
+        conversation.push(LLMMessage {
+            role: "user".to_string(),
+            content: Some(user_message.to_string()),
+            tool_calls: None,
+            tool_call_id: None,
+        });
+    }
 
     let max_iterations = 20;
     for iteration in 0..max_iterations {
