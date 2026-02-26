@@ -11,7 +11,7 @@ if ! command -v cargo >/dev/null 2>&1; then
 	. "$HOME/.cargo/env"
 fi
 
-cargo install --git https://github.com/Stoffberg/relay.git --bin relay
+cargo install --git https://github.com/Stoffberg/relay.git --package relay-agent --bin relay
 
 echo ""
 echo "  Installed! Run 'relay setup' to configure, then 'relay' to start."
