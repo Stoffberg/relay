@@ -8,19 +8,25 @@ name = "relay"
 path = "src/main.rs"
 
 [dependencies]
-tokio = { version = "1", features = ["full"] }
-spacetimedb-sdk = "2.0.1"
-tracing = "0.1"
-tracing-subscriber = "0.3"
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-anyhow = "1"
-uuid = { version = "1", features = ["v4"] }
-glob = "0.3"
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
+spacetimedb-sdk = { workspace = true }
+uuid = { workspace = true }
 regex = "1"
 clap = { version = "4.5.60", features = ["derive"] }
 dialoguer = "0.12.0"
 toml = "1.0.3"
 home = "0.5.12"
 libc = "0.2.182"
-atty = "0.2.14"
+tokio-util = "0.7.18"
+reqwest = { version = "0.13.2", default-features = false, features = ["rustls"] }
+walkdir = "2.5.0"
+globset = "0.4.18"
+
+[dev-dependencies]
+tempfile = "3.26.0"
+

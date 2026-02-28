@@ -14,6 +14,8 @@ export const Agent = __t.object("Agent", {
   id: __t.string(),
   name: __t.string(),
   userId: __t.identity(),
+  ownerToken: __t.string(),
+  workdir: __t.string(),
   status: __t.string(),
   lastHeartbeat: __t.timestamp(),
   createdAt: __t.timestamp(),
@@ -26,6 +28,9 @@ export const Message = __t.object("Message", {
   userId: __t.identity(),
   role: __t.string(),
   status: __t.string(),
+  error: __t.option(__t.string()),
+  promptTokens: __t.option(__t.u64()),
+  completionTokens: __t.option(__t.u64()),
   createdAt: __t.timestamp(),
 });
 export type Message = __Infer<typeof Message>;
@@ -42,8 +47,12 @@ export type MessagePart = __Infer<typeof MessagePart>;
 export const Session = __t.object("Session", {
   id: __t.string(),
   userId: __t.identity(),
+  ownerToken: __t.string(),
   title: __t.string(),
   status: __t.string(),
+  model: __t.option(__t.string()),
+  systemPrompt: __t.option(__t.string()),
+  isArchived: __t.bool(),
   createdAt: __t.timestamp(),
   updatedAt: __t.timestamp(),
 });
@@ -51,6 +60,7 @@ export type Session = __Infer<typeof Session>;
 
 export const ToolCommand = __t.object("ToolCommand", {
   id: __t.u64(),
+  toolCallId: __t.string(),
   messageId: __t.string(),
   sessionId: __t.string(),
   agentId: __t.string(),
@@ -71,4 +81,14 @@ export const ToolResult = __t.object("ToolResult", {
   createdAt: __t.timestamp(),
 });
 export type ToolResult = __Infer<typeof ToolResult>;
+
+export const Verification = __t.object("Verification", {
+  id: __t.u64(),
+  sessionId: __t.string(),
+  messageId: __t.string(),
+  passed: __t.bool(),
+  reason: __t.option(__t.string()),
+  createdAt: __t.timestamp(),
+});
+export type Verification = __Infer<typeof Verification>;
 

@@ -9,6 +9,8 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 pub(super) struct RegisterAgentArgs {
     pub agent_id: String,
     pub name: String,
+    pub owner_token: String,
+    pub workdir: String,
 }
 
 impl From<RegisterAgentArgs> for super::Reducer {
@@ -16,6 +18,8 @@ impl From<RegisterAgentArgs> for super::Reducer {
         Self::RegisterAgent {
             agent_id: args.agent_id,
             name: args.name,
+            owner_token: args.owner_token,
+            workdir: args.workdir,
         }
     }
 }
@@ -35,8 +39,14 @@ pub trait register_agent {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`register_agent:register_agent_then`] to run a callback after the reducer completes.
-    fn register_agent(&self, agent_id: String, name: String) -> __sdk::Result<()> {
-        self.register_agent_then(agent_id, name, |_, _| {})
+    fn register_agent(
+        &self,
+        agent_id: String,
+        name: String,
+        owner_token: String,
+        workdir: String,
+    ) -> __sdk::Result<()> {
+        self.register_agent_then(agent_id, name, owner_token, workdir, |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `register_agent` to run as soon as possible,
@@ -49,6 +59,8 @@ pub trait register_agent {
         &self,
         agent_id: String,
         name: String,
+        owner_token: String,
+        workdir: String,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
@@ -61,12 +73,21 @@ impl register_agent for super::RemoteReducers {
         &self,
         agent_id: String,
         name: String,
+        owner_token: String,
+        workdir: String,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
-        self.imp
-            .invoke_reducer_with_callback(RegisterAgentArgs { agent_id, name }, callback)
+        self.imp.invoke_reducer_with_callback(
+            RegisterAgentArgs {
+                agent_id,
+                name,
+                owner_token,
+                workdir,
+            },
+            callback,
+        )
     }
 }

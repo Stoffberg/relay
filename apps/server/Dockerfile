@@ -14,6 +14,7 @@ RUN cargo build --release --bin relay-server
 
 FROM debian:bookworm-slim AS runtime
 RUN apt-get update && apt-get install -y ca-certificates libssl3 && rm -rf /var/lib/apt/lists/*
-WORKDIR /app
+RUN groupadd -r relay && useradd -r -g relay -d /nonexistent -s /usr/sbin/nologin relay
 COPY --from=builder /app/target/release/relay-server /usr/local/bin
+USER relay
 ENTRYPOINT ["/usr/local/bin/relay-server"]

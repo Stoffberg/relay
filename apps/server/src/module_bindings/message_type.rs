@@ -12,6 +12,9 @@ pub struct Message {
     pub user_id: __sdk::Identity,
     pub role: String,
     pub status: String,
+    pub error: Option<String>,
+    pub prompt_tokens: Option<u64>,
+    pub completion_tokens: Option<u64>,
     pub created_at: __sdk::Timestamp,
 }
 
@@ -28,6 +31,9 @@ pub struct MessageCols {
     pub user_id: __sdk::__query_builder::Col<Message, __sdk::Identity>,
     pub role: __sdk::__query_builder::Col<Message, String>,
     pub status: __sdk::__query_builder::Col<Message, String>,
+    pub error: __sdk::__query_builder::Col<Message, Option<String>>,
+    pub prompt_tokens: __sdk::__query_builder::Col<Message, Option<u64>>,
+    pub completion_tokens: __sdk::__query_builder::Col<Message, Option<u64>>,
     pub created_at: __sdk::__query_builder::Col<Message, __sdk::Timestamp>,
 }
 
@@ -40,6 +46,9 @@ impl __sdk::__query_builder::HasCols for Message {
             user_id: __sdk::__query_builder::Col::new(table_name, "user_id"),
             role: __sdk::__query_builder::Col::new(table_name, "role"),
             status: __sdk::__query_builder::Col::new(table_name, "status"),
+            error: __sdk::__query_builder::Col::new(table_name, "error"),
+            prompt_tokens: __sdk::__query_builder::Col::new(table_name, "prompt_tokens"),
+            completion_tokens: __sdk::__query_builder::Col::new(table_name, "completion_tokens"),
             created_at: __sdk::__query_builder::Col::new(table_name, "created_at"),
         }
     }
@@ -50,6 +59,7 @@ impl __sdk::__query_builder::HasCols for Message {
 /// Provides typed access to indexed columns for query building.
 pub struct MessageIxCols {
     pub id: __sdk::__query_builder::IxCol<Message, String>,
+    pub session_id: __sdk::__query_builder::IxCol<Message, String>,
 }
 
 impl __sdk::__query_builder::HasIxCols for Message {
@@ -57,6 +67,7 @@ impl __sdk::__query_builder::HasIxCols for Message {
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         MessageIxCols {
             id: __sdk::__query_builder::IxCol::new(table_name, "id"),
+            session_id: __sdk::__query_builder::IxCol::new(table_name, "session_id"),
         }
     }
 }

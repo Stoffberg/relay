@@ -13,4 +13,6 @@ import {
 export default {
   agentId: __t.string(),
   name: __t.string(),
+  ownerToken: __t.string(),
+  workdir: __t.string(),
 };

@@ -7,6 +7,6 @@ edition = "2021"
 crate-type = ["cdylib"]
 
 [dependencies]
-spacetimedb = "2.0"
+serde = { workspace = true }
+spacetimedb = "2.0.2"
 log = "0.4"
-serde = { version = "1", features = ["derive"] }

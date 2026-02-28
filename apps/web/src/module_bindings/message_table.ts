@@ -16,5 +16,8 @@ export default __t.row({
   userId: __t.identity().name("user_id"),
   role: __t.string(),
   status: __t.string(),
+  error: __t.option(__t.string()),
+  promptTokens: __t.option(__t.u64()).name("prompt_tokens"),
+  completionTokens: __t.option(__t.u64()).name("completion_tokens"),
   createdAt: __t.timestamp().name("created_at"),
 });

@@ -23,7 +23,7 @@
     "sherif": "bunx sherif@latest"
   },
   "devDependencies": {
-    "@biomejs/biome": "latest",
+    "@biomejs/biome": "1.9.2",
     "knip": "^5.83.1",
     "lefthook": "^2.1.1",
     "turbo": "^2.6.3",

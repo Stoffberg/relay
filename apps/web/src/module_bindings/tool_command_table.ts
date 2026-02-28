@@ -12,6 +12,7 @@ import {
 
 export default __t.row({
   id: __t.u64().primaryKey(),
+  toolCallId: __t.string().name("tool_call_id"),
   messageId: __t.string().name("message_id"),
   sessionId: __t.string().name("session_id"),
   agentId: __t.string().name("agent_id"),

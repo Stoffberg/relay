@@ -12,14 +12,19 @@ const ThemeContext = createContext<ThemeContextValue>({
   toggle: () => {},
 });
 
+function getDefaultTheme(): Theme {
+  if (typeof window === "undefined") return "dark";
+  const stored = localStorage.getItem("relay-theme") as Theme | null;
+  if (stored === "light" || stored === "dark") return stored;
+  if (window.matchMedia("(prefers-color-scheme: light)").matches) return "light";
+  return "dark";
+}
+
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [theme, setTheme] = useState<Theme>("dark");
 
   useEffect(() => {
-    const stored = localStorage.getItem("relay-theme") as Theme | null;
-    if (stored === "light" || stored === "dark") {
-      setTheme(stored);
-    }
+    setTheme(getDefaultTheme());
   }, []);
 
   useEffect(() => {

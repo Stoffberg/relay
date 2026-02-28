@@ -11,6 +11,7 @@ import {
 } from "spacetimedb";
 
 export default {
+  toolCallId: __t.string(),
   messageId: __t.string(),
   sessionId: __t.string(),
   agentId: __t.string(),

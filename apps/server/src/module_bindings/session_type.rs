@@ -9,8 +9,12 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 pub struct Session {
     pub id: String,
     pub user_id: __sdk::Identity,
+    pub owner_token: String,
     pub title: String,
     pub status: String,
+    pub model: Option<String>,
+    pub system_prompt: Option<String>,
+    pub is_archived: bool,
     pub created_at: __sdk::Timestamp,
     pub updated_at: __sdk::Timestamp,
 }
@@ -25,8 +29,12 @@ impl __sdk::InModule for Session {
 pub struct SessionCols {
     pub id: __sdk::__query_builder::Col<Session, String>,
     pub user_id: __sdk::__query_builder::Col<Session, __sdk::Identity>,
+    pub owner_token: __sdk::__query_builder::Col<Session, String>,
     pub title: __sdk::__query_builder::Col<Session, String>,
     pub status: __sdk::__query_builder::Col<Session, String>,
+    pub model: __sdk::__query_builder::Col<Session, Option<String>>,
+    pub system_prompt: __sdk::__query_builder::Col<Session, Option<String>>,
+    pub is_archived: __sdk::__query_builder::Col<Session, bool>,
     pub created_at: __sdk::__query_builder::Col<Session, __sdk::Timestamp>,
     pub updated_at: __sdk::__query_builder::Col<Session, __sdk::Timestamp>,
 }
@@ -37,8 +45,12 @@ impl __sdk::__query_builder::HasCols for Session {
         SessionCols {
             id: __sdk::__query_builder::Col::new(table_name, "id"),
             user_id: __sdk::__query_builder::Col::new(table_name, "user_id"),
+            owner_token: __sdk::__query_builder::Col::new(table_name, "owner_token"),
             title: __sdk::__query_builder::Col::new(table_name, "title"),
             status: __sdk::__query_builder::Col::new(table_name, "status"),
+            model: __sdk::__query_builder::Col::new(table_name, "model"),
+            system_prompt: __sdk::__query_builder::Col::new(table_name, "system_prompt"),
+            is_archived: __sdk::__query_builder::Col::new(table_name, "is_archived"),
             created_at: __sdk::__query_builder::Col::new(table_name, "created_at"),
             updated_at: __sdk::__query_builder::Col::new(table_name, "updated_at"),
         }

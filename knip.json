@@ -1,7 +1,15 @@
 {
   "$schema": "https://knip.dev/reference/knip-config",
-  "project": ["src/**/*.{ts,tsx}"],
-  "ignore": ["**/*.d.ts", "dist/**"],
+  "workspaces": {
+    "apps/web": {
+      "project": ["src/**/*.{ts,tsx}"],
+      "ignore": ["**/*.d.ts", "dist/**", "src/module_bindings/**"]
+    },
+    "packages/infra": {
+      "project": ["**/*.{ts,tsx}"],
+      "ignore": ["**/*.d.ts"]
+    }
+  },
   "ignoreDependencies": ["@types/*"],
   "exclude": ["exports", "types"]
 }

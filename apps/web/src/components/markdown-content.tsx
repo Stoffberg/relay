@@ -1,24 +1,45 @@
-import { memo, useMemo, useCallback } from "react";
+import { memo, useMemo, useCallback, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
+import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import type { Components } from "react-markdown";
 
+const sanitizeSchema = {
+	...defaultSchema,
+	attributes: {
+		...defaultSchema.attributes,
+		code: [...(defaultSchema.attributes?.code || []), "className", "style"],
+		span: [...(defaultSchema.attributes?.span || []), "className", "style"],
+		pre: [...(defaultSchema.attributes?.pre || []), "className", "style"],
+	},
+};
+
 const remarkPlugins = [remarkGfm];
-const rehypePlugins = [rehypeHighlight];
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const rehypePlugins: any[] = [
+	[rehypeSanitize, sanitizeSchema],
+	rehypeHighlight,
+];
 
 function CopyButton({ code }: { code: string }) {
+  const [copied, setCopied] = useState(false);
+
   const handleCopy = useCallback(() => {
-    navigator.clipboard.writeText(code);
+    navigator.clipboard.writeText(code).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }).catch(() => {});
   }, [code]);
 
   return (
     <button
       type="button"
       onClick={handleCopy}
-      className="absolute top-2 right-2 px-2 py-1 text-[10px] font-medium rounded-[4px] bg-surface text-muted hover:text-foreground transition-colors opacity-0 group-hover:opacity-100"
+      aria-label="Copy code"
+      className="absolute top-2 right-2 px-2 py-1 text-[10px] font-medium rounded-[4px] bg-surface text-muted hover:text-foreground transition-colors opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus:opacity-100"
     >
-      Copy
+      {copied ? "Copied!" : "Copy"}
     </button>
   );
 }
@@ -39,7 +60,10 @@ const components: Components = {
       children?: React.ReactNode;
     }>;
     const className = codeElement?.props?.className ?? "";
-    const lang = className.replace(/^language-/, "").replace(/^hljs\s*/, "");
+		const lang = className
+			.replace(/^language-/, "")
+			.replace(/^hljs\s*/, "")
+			.replace(/^shiki\s*/, "");
     const code = extractTextContent(codeElement?.props?.children);
 
     return (
@@ -57,11 +81,12 @@ const components: Components = {
     );
   },
 
-  code({ children, className }) {
-    const isBlock = className?.includes("language-") || className?.includes("hljs");
-    if (isBlock) {
-      return <code className={className}>{children}</code>;
-    }
+	code({ children, className }) {
+		const isBlock =
+			className?.includes("language-") || className?.includes("hljs") || className?.includes("shiki");
+		if (isBlock) {
+			return <code className={className}>{children}</code>;
+		}
     return (
       <code className="px-1.5 py-0.5 rounded-[3px] bg-surface text-accent text-[13px] font-mono">
         {children}

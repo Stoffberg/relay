@@ -47,6 +47,7 @@ impl __sdk::__query_builder::HasCols for MessagePart {
 /// Provides typed access to indexed columns for query building.
 pub struct MessagePartIxCols {
     pub id: __sdk::__query_builder::IxCol<MessagePart, u64>,
+    pub message_id: __sdk::__query_builder::IxCol<MessagePart, String>,
 }
 
 impl __sdk::__query_builder::HasIxCols for MessagePart {
@@ -54,6 +55,7 @@ impl __sdk::__query_builder::HasIxCols for MessagePart {
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         MessagePartIxCols {
             id: __sdk::__query_builder::IxCol::new(table_name, "id"),
+            message_id: __sdk::__query_builder::IxCol::new(table_name, "message_id"),
         }
     }
 }

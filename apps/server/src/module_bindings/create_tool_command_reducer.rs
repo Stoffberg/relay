@@ -7,6 +7,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
 pub(super) struct CreateToolCommandArgs {
+    pub tool_call_id: String,
     pub message_id: String,
     pub session_id: String,
     pub agent_id: String,
@@ -17,6 +18,7 @@ pub(super) struct CreateToolCommandArgs {
 impl From<CreateToolCommandArgs> for super::Reducer {
     fn from(args: CreateToolCommandArgs) -> Self {
         Self::CreateToolCommand {
+            tool_call_id: args.tool_call_id,
             message_id: args.message_id,
             session_id: args.session_id,
             agent_id: args.agent_id,
@@ -43,6 +45,7 @@ pub trait create_tool_command {
     /// /// Use [`create_tool_command:create_tool_command_then`] to run a callback after the reducer completes.
     fn create_tool_command(
         &self,
+        tool_call_id: String,
         message_id: String,
         session_id: String,
         agent_id: String,
@@ -50,6 +53,7 @@ pub trait create_tool_command {
         tool_args: String,
     ) -> __sdk::Result<()> {
         self.create_tool_command_then(
+            tool_call_id,
             message_id,
             session_id,
             agent_id,
@@ -67,6 +71,7 @@ pub trait create_tool_command {
     ///  and its status can be observed with the `callback`.
     fn create_tool_command_then(
         &self,
+        tool_call_id: String,
         message_id: String,
         session_id: String,
         agent_id: String,
@@ -82,6 +87,7 @@ pub trait create_tool_command {
 impl create_tool_command for super::RemoteReducers {
     fn create_tool_command_then(
         &self,
+        tool_call_id: String,
         message_id: String,
         session_id: String,
         agent_id: String,
@@ -94,6 +100,7 @@ impl create_tool_command for super::RemoteReducers {
     ) -> __sdk::Result<()> {
         self.imp.invoke_reducer_with_callback(
             CreateToolCommandArgs {
+                tool_call_id,
                 message_id,
                 session_id,
                 agent_id,

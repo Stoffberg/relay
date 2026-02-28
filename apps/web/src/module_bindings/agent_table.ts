@@ -14,6 +14,8 @@ export default __t.row({
   id: __t.string().primaryKey(),
   name: __t.string(),
   userId: __t.identity().name("user_id"),
+  ownerToken: __t.string().name("owner_token"),
+  workdir: __t.string(),
   status: __t.string(),
   lastHeartbeat: __t.timestamp().name("last_heartbeat"),
   createdAt: __t.timestamp().name("created_at"),

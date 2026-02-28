@@ -50,6 +50,7 @@ impl __sdk::__query_builder::HasCols for ToolResult {
 /// Provides typed access to indexed columns for query building.
 pub struct ToolResultIxCols {
     pub id: __sdk::__query_builder::IxCol<ToolResult, u64>,
+    pub tool_command_id: __sdk::__query_builder::IxCol<ToolResult, u64>,
 }
 
 impl __sdk::__query_builder::HasIxCols for ToolResult {
@@ -57,6 +58,7 @@ impl __sdk::__query_builder::HasIxCols for ToolResult {
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         ToolResultIxCols {
             id: __sdk::__query_builder::IxCol::new(table_name, "id"),
+            tool_command_id: __sdk::__query_builder::IxCol::new(table_name, "tool_command_id"),
         }
     }
 }

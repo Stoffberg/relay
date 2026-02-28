@@ -10,27 +10,28 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@tailwindcss/vite": "^4.1.18",
+    "@shikijs/rehype": "^4.0.0",
     "@tanstack/react-router": "^1.141.1",
     "@tanstack/react-start": "^1.141.1",
     "@tanstack/react-virtual": "^3.13.19",
-    "highlight.js": "^11.11.1",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-markdown": "^10.1.0",
-    "rehype-highlight": "^7.0.2",
+    "rehype-sanitize": "^6.0.0",
     "remark-gfm": "^4.0.1",
-    "spacetimedb": "^2.0.1",
-    "tailwindcss": "^4.1.18"
+    "shiki": "^4.0.0",
+    "spacetimedb": "^2.0.1"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.17.1",
     "@cloudflare/workers-types": "^4.20260305.0",
+    "@tailwindcss/vite": "^4.2.1",
     "@types/node": "^22.10.2",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^5.0.4",
     "alchemy": "^0.82.1",
+    "tailwindcss": "^4.2.1",
     "typescript": "^5.7.2",
     "vite": "^7.1.7",
     "vite-tsconfig-paths": "^5.1.4",

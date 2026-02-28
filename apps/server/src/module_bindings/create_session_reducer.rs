@@ -8,12 +8,14 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[sats(crate = __lib)]
 pub(super) struct CreateSessionArgs {
     pub session_id: String,
+    pub owner_token: String,
 }
 
 impl From<CreateSessionArgs> for super::Reducer {
     fn from(args: CreateSessionArgs) -> Self {
         Self::CreateSession {
             session_id: args.session_id,
+            owner_token: args.owner_token,
         }
     }
 }
@@ -33,8 +35,8 @@ pub trait create_session {
     /// The reducer will run asynchronously in the future,
     ///  and this method provides no way to listen for its completion status.
     /// /// Use [`create_session:create_session_then`] to run a callback after the reducer completes.
-    fn create_session(&self, session_id: String) -> __sdk::Result<()> {
-        self.create_session_then(session_id, |_, _| {})
+    fn create_session(&self, session_id: String, owner_token: String) -> __sdk::Result<()> {
+        self.create_session_then(session_id, owner_token, |_, _| {})
     }
 
     /// Request that the remote module invoke the reducer `create_session` to run as soon as possible,
@@ -46,6 +48,7 @@ pub trait create_session {
     fn create_session_then(
         &self,
         session_id: String,
+        owner_token: String,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
@@ -57,12 +60,18 @@ impl create_session for super::RemoteReducers {
     fn create_session_then(
         &self,
         session_id: String,
+        owner_token: String,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
             + 'static,
     ) -> __sdk::Result<()> {
-        self.imp
-            .invoke_reducer_with_callback(CreateSessionArgs { session_id }, callback)
+        self.imp.invoke_reducer_with_callback(
+            CreateSessionArgs {
+                session_id,
+                owner_token,
+            },
+            callback,
+        )
     }
 }

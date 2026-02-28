@@ -12,4 +12,5 @@ import {
 
 export default {
   sessionId: __t.string(),
+  ownerToken: __t.string(),
 };

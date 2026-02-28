@@ -1,4 +1,3 @@
-@import url("https://fonts.googleapis.com/css2?family=Figtree:ital,wght@0,300..900;1,300..900&family=JetBrains+Mono:ital,wght@0,300;0,400;0,500;1,300;1,400&display=swap");
 @import "tailwindcss";
 @import "highlight.js/styles/github-dark-dimmed.css";
 
@@ -83,12 +82,59 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+*:focus {
+  outline: none;
+}
+
+*:focus-visible {
+  outline: none;
+}
+
 code {
   @apply font-mono;
 }
 
 .markdown-body .hljs {
   background: transparent !important;
+}
+
+:root.light .hljs {
+  color: #24292f;
+}
+
+:root.light .hljs-keyword,
+:root.light .hljs-selector-tag,
+:root.light .hljs-type {
+  color: #cf222e;
+}
+
+:root.light .hljs-string,
+:root.light .hljs-attr {
+  color: #0a3069;
+}
+
+:root.light .hljs-number,
+:root.light .hljs-literal {
+  color: #0550ae;
+}
+
+:root.light .hljs-comment {
+  color: #6e7781;
+}
+
+:root.light .hljs-title,
+:root.light .hljs-function {
+  color: #8250df;
+}
+
+:root.light .hljs-built_in,
+:root.light .hljs-variable {
+  color: #953800;
+}
+
+:root.light .hljs-meta,
+:root.light .hljs-tag {
+  color: #116329;
 }
 
 @keyframes message-in {
@@ -251,19 +297,19 @@ code {
   animation: slide-down 0.3s cubic-bezier(0.5, 0, 1, 0.5) both;
 }
 
-@keyframes expand {
-  from {
-    max-height: 0;
-    opacity: 0;
-  }
-  to {
-    max-height: 2000px;
-    opacity: 1;
-  }
+.expandable {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition: grid-template-rows 0.4s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.animate-expand {
-  animation: expand 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+.expandable.expanded {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+
+.expandable > * {
   overflow: hidden;
 }
 
@@ -294,4 +340,54 @@ code {
 
 .animate-caret {
   animation: blink 0.8s step-end infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@media print {
+  nav[aria-label="Chat sessions"],
+  [data-chat-input],
+  .shrink-0:has([data-chat-input]),
+  a[href="#main-content"],
+  button[aria-label="Scroll to bottom"] {
+    display: none !important;
+  }
+
+  body {
+    background: white !important;
+    color: black !important;
+  }
+
+  .markdown-body,
+  .markdown-body * {
+    color: black !important;
+  }
+
+  pre {
+    border: 1px solid #ccc !important;
+    background: #f5f5f5 !important;
+  }
+
+  pre code,
+  pre code * {
+    color: black !important;
+  }
+
+  .expandable {
+    grid-template-rows: 1fr !important;
+    opacity: 1 !important;
+  }
+
+  main {
+    flex: 1 !important;
+    overflow: visible !important;
+  }
 }

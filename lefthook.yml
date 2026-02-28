@@ -3,7 +3,7 @@ pre-commit:
     biome:
       glob: "**/*.{ts,tsx,js,jsx,json}"
       run: biome check --apply {staged_files}
-      pass_filename: true
+      stage_fixed: true
 
 pre-push:
   commands:

@@ -13,8 +13,12 @@ import {
 export default __t.row({
   id: __t.string().primaryKey(),
   userId: __t.identity().name("user_id"),
+  ownerToken: __t.string().name("owner_token"),
   title: __t.string(),
   status: __t.string(),
+  model: __t.option(__t.string()),
+  systemPrompt: __t.option(__t.string()).name("system_prompt"),
+  isArchived: __t.bool().name("is_archived"),
   createdAt: __t.timestamp().name("created_at"),
   updatedAt: __t.timestamp().name("updated_at"),
 });

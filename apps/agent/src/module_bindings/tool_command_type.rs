@@ -8,6 +8,7 @@ use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 #[sats(crate = __lib)]
 pub struct ToolCommand {
     pub id: u64,
+    pub tool_call_id: String,
     pub message_id: String,
     pub session_id: String,
     pub agent_id: String,
@@ -27,6 +28,7 @@ impl __sdk::InModule for ToolCommand {
 /// Provides typed access to columns for query building.
 pub struct ToolCommandCols {
     pub id: __sdk::__query_builder::Col<ToolCommand, u64>,
+    pub tool_call_id: __sdk::__query_builder::Col<ToolCommand, String>,
     pub message_id: __sdk::__query_builder::Col<ToolCommand, String>,
     pub session_id: __sdk::__query_builder::Col<ToolCommand, String>,
     pub agent_id: __sdk::__query_builder::Col<ToolCommand, String>,
@@ -42,6 +44,7 @@ impl __sdk::__query_builder::HasCols for ToolCommand {
     fn cols(table_name: &'static str) -> Self::Cols {
         ToolCommandCols {
             id: __sdk::__query_builder::Col::new(table_name, "id"),
+            tool_call_id: __sdk::__query_builder::Col::new(table_name, "tool_call_id"),
             message_id: __sdk::__query_builder::Col::new(table_name, "message_id"),
             session_id: __sdk::__query_builder::Col::new(table_name, "session_id"),
             agent_id: __sdk::__query_builder::Col::new(table_name, "agent_id"),
@@ -58,14 +61,20 @@ impl __sdk::__query_builder::HasCols for ToolCommand {
 ///
 /// Provides typed access to indexed columns for query building.
 pub struct ToolCommandIxCols {
+    pub agent_id: __sdk::__query_builder::IxCol<ToolCommand, String>,
     pub id: __sdk::__query_builder::IxCol<ToolCommand, u64>,
+    pub message_id: __sdk::__query_builder::IxCol<ToolCommand, String>,
+    pub session_id: __sdk::__query_builder::IxCol<ToolCommand, String>,
 }
 
 impl __sdk::__query_builder::HasIxCols for ToolCommand {
     type IxCols = ToolCommandIxCols;
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         ToolCommandIxCols {
+            agent_id: __sdk::__query_builder::IxCol::new(table_name, "agent_id"),
             id: __sdk::__query_builder::IxCol::new(table_name, "id"),
+            message_id: __sdk::__query_builder::IxCol::new(table_name, "message_id"),
+            session_id: __sdk::__query_builder::IxCol::new(table_name, "session_id"),
         }
     }
 }

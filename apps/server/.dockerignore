@@ -1,2 +1,5 @@
-fly.toml
+target/
 .git/
+*.md
+docs/
+fly.toml
