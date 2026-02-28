@@ -17,10 +17,16 @@ esac
 case "$OS" in
 Darwin) PLATFORM="macos" ;;
 Linux) PLATFORM="linux" ;;
+MINGW*|MSYS*|CYGWIN*) PLATFORM="windows" ;;
 *) echo "Unsupported OS: $OS" && exit 1 ;;
 esac
 
-BINARY="relay-${PLATFORM}-${ARCH}"
+if [ "$PLATFORM" = "windows" ]; then
+  BINARY="relay-windows-${ARCH}.exe"
+else
+  BINARY="relay-${PLATFORM}-${ARCH}"
+fi
+
 URL="https://github.com/${REPO}/releases/download/${VERSION}/${BINARY}"
 
 echo ""
