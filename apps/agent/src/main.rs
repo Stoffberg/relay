@@ -20,10 +20,13 @@ use tracing::info;
 const HEARTBEAT_INTERVAL_SECS: u64 = 30;
 
 #[derive(Parser)]
-#[command(name = "relay", about = "Relay local agent", version)]
+#[command(name = "relay", about = "Relay local agent", version, disable_version_flag = true)]
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
+
+    #[arg(short = 'v', short_alias = 'V', long = "version", action = clap::ArgAction::Version, global = true)]
+    version: (),
 }
 
 #[derive(Subcommand)]
