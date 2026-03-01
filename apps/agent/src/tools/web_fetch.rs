@@ -1,6 +1,14 @@
 use anyhow::Result;
+use std::sync::LazyLock;
 
 const MAX_OUTPUT_CHARS: usize = 30_000;
+
+static SCRIPT_RE: LazyLock<regex::Regex> =
+    LazyLock::new(|| regex::Regex::new(r"(?is)<script[^>]*>.*?</script>").unwrap());
+static STYLE_RE: LazyLock<regex::Regex> =
+    LazyLock::new(|| regex::Regex::new(r"(?is)<style[^>]*>.*?</style>").unwrap());
+static TAG_RE: LazyLock<regex::Regex> =
+    LazyLock::new(|| regex::Regex::new(r"<[^>]+>").unwrap());
 
 pub async fn execute(url: &str) -> Result<String> {
     if !url.starts_with("http://") && !url.starts_with("https://") {
@@ -26,20 +34,17 @@ pub async fn execute(url: &str) -> Result<String> {
     let text = strip_html(&body);
 
     if text.len() > MAX_OUTPUT_CHARS {
-        Ok(format!("{}... (truncated at {} chars)", &text[..MAX_OUTPUT_CHARS], MAX_OUTPUT_CHARS))
+        let truncated: String = text.chars().take(MAX_OUTPUT_CHARS).collect();
+        Ok(format!("{truncated}... (truncated at {MAX_OUTPUT_CHARS} chars)"))
     } else {
         Ok(text)
     }
 }
 
 fn strip_html(html: &str) -> String {
-    let script_re = regex::Regex::new(r"(?is)<script[^>]*>.*?</script>").unwrap();
-    let style_re = regex::Regex::new(r"(?is)<style[^>]*>.*?</style>").unwrap();
-    let tag_re = regex::Regex::new(r"<[^>]+>").unwrap();
-
-    let no_scripts = script_re.replace_all(html, "");
-    let no_styles = style_re.replace_all(&no_scripts, "");
-    let no_tags = tag_re.replace_all(&no_styles, "");
+    let no_scripts = SCRIPT_RE.replace_all(html, "");
+    let no_styles = STYLE_RE.replace_all(&no_scripts, "");
+    let no_tags = TAG_RE.replace_all(&no_styles, "");
 
     let lines: Vec<&str> = no_tags
         .lines()

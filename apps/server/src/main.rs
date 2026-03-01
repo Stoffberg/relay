@@ -451,6 +451,9 @@ async fn stop_handler(
     State(state): State<Arc<AppState>>,
     Json(payload): Json<StopRequest>,
 ) -> impl IntoResponse {
+    if let Err(resp) = validate_session_owner(&state, &payload.session_id, &payload.owner_token) {
+        return resp;
+    }
     let session_id = payload.session_id;
 
     let cancelled = {
@@ -484,6 +487,30 @@ fn require_db_connected(state: &AppState) -> Result<(), (StatusCode, Json<serde_
     }
 }
 
+fn validate_session_owner(
+    state: &AppState,
+    session_id: &str,
+    owner_token: &str,
+) -> Result<(), (StatusCode, Json<serde_json::Value>)> {
+    if owner_token.is_empty() {
+        return Err((
+            StatusCode::UNAUTHORIZED,
+            Json(serde_json::json!({ "error": "owner_token is required" })),
+        ));
+    }
+    match state.conn.db.session().id().find(&session_id.to_string()) {
+        Some(session) if session.owner_token == owner_token => Ok(()),
+        Some(_) => Err((
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({ "error": "You do not own this session" })),
+        )),
+        None => Err((
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "error": "Session not found" })),
+        )),
+    }
+}
+
 fn force_session_cleanup(state: &AppState, session_id: &str) {
     for msg in state.conn.db.message().iter() {
         if msg.session_id == session_id && msg.status == "streaming" {
@@ -514,6 +541,9 @@ async fn regenerate_handler(
     Json(payload): Json<RegenerateRequest>,
 ) -> impl IntoResponse {
     if let Err(resp) = require_db_connected(&state) {
+        return resp;
+    }
+    if let Err(resp) = validate_session_owner(&state, &payload.session_id, &payload.owner_token) {
         return resp;
     }
     let session_id = payload.session_id;
@@ -671,6 +701,9 @@ async fn edit_handler(
     Json(payload): Json<EditRequest>,
 ) -> impl IntoResponse {
     if let Err(resp) = require_db_connected(&state) {
+        return resp;
+    }
+    if let Err(resp) = validate_session_owner(&state, &payload.session_id, &payload.owner_token) {
         return resp;
     }
     let session_id = payload.session_id;

@@ -60,6 +60,7 @@ function UserMessageRow({ msg }: { msg: ChatMessage }) {
           session_id: msg.sessionId,
           message_id: msg.id,
           content: editText.trim(),
+          owner_token: localStorage.getItem("relay-owner-token") || "",
         }),
       });
       if (!res.ok) {
@@ -131,6 +132,7 @@ function AssistantMessageRow({ msg, verification }: { msg: ChatMessage; verifica
         body: JSON.stringify({
           session_id: msg.sessionId,
           message_id: msg.id,
+          owner_token: localStorage.getItem("relay-owner-token") || "",
         }),
       });
       if (!res.ok) {

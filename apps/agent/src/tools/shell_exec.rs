@@ -21,6 +21,7 @@ pub async fn execute(command: &str, workdir: Option<&str>) -> Result<String> {
     cmd.env("LANG", "en_US.UTF-8");
 
     if let Some(dir) = workdir {
+        super::validate_path(dir)?;
         cmd.current_dir(dir);
     }
 

@@ -114,7 +114,8 @@ fn grep_file(regex: &regex::Regex, path: &Path, results: &mut Vec<String>, skipp
         };
         if regex.is_match(&line) {
             let display_line = if line.len() > 500 {
-                format!("{}... (line truncated)", &line[..500])
+                let safe: String = line.chars().take(500).collect();
+                format!("{safe}... (line truncated)")
             } else {
                 line
             };

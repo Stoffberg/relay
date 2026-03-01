@@ -53,12 +53,14 @@ pub struct ChatResponse {
 #[derive(Deserialize)]
 pub struct StopRequest {
     pub session_id: String,
+    pub owner_token: String,
 }
 
 #[derive(Deserialize)]
 pub struct RegenerateRequest {
     pub session_id: String,
     pub message_id: String,
+    pub owner_token: String,
 }
 
 #[derive(Deserialize)]
@@ -66,6 +68,7 @@ pub struct EditRequest {
     pub session_id: String,
     pub message_id: String,
     pub content: String,
+    pub owner_token: String,
 }
 
 #[derive(Serialize, Clone)]

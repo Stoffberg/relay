@@ -367,7 +367,7 @@ function ChatPage() {
     fetch(`${API_URL}/stop`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ session_id: sessionId }),
+      body: JSON.stringify({ session_id: sessionId, owner_token: localStorage.getItem("relay-owner-token") || "" }),
     }).catch(err => console.error("[relay] stop request failed:", err));
   }, [sessionId]);
 
