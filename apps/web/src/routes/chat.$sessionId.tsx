@@ -681,13 +681,13 @@ function AgentSetupGuide({ inline }: { inline?: boolean }) {
   };
 
   const installCommand = platform.os === "windows"
-    ? "wsl curl -fsSL https://code.stoff.dev/install.sh | sh"
+    ? "irm https://code.stoff.dev/install.ps1 | iex"
     : "curl -fsSL https://code.stoff.dev/install.sh | sh";
 
   const steps = [
     {
       label: "Install",
-      description: platform.os === "windows" ? "Via WSL" : `For ${platform.label}`,
+      description: `For ${platform.label}`,
       command: installCommand,
     },
     {

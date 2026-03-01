@@ -15,13 +15,20 @@ jobs:
         include:
           - target: x86_64-apple-darwin
             os: macos-latest
+            archive: tar.gz
           - target: aarch64-apple-darwin
             os: macos-latest
+            archive: tar.gz
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
+            archive: tar.gz
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-latest
+            archive: tar.gz
             use_cross: true
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            archive: zip
 
     runs-on: ${{ matrix.os }}
 
@@ -45,17 +52,24 @@ jobs:
         if: "!matrix.use_cross"
         run: cargo build --release --target ${{ matrix.target }} -p relay-agent
 
-      - name: Package binary
+      - name: Package binary (unix)
+        if: matrix.archive == 'tar.gz'
         run: |
           cd target/${{ matrix.target }}/release
           tar czf ../../../relay-${{ matrix.target }}.tar.gz relay
           cd ../../..
 
+      - name: Package binary (windows)
+        if: matrix.archive == 'zip'
+        shell: pwsh
+        run: |
+          Compress-Archive -Path "target/${{ matrix.target }}/release/relay.exe" -DestinationPath "relay-${{ matrix.target }}.zip"
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: relay-${{ matrix.target }}
-          path: relay-${{ matrix.target }}.tar.gz
+          path: relay-${{ matrix.target }}.${{ matrix.archive }}
 
   release:
     needs: build
@@ -78,3 +92,4 @@ jobs:
             artifacts/relay-aarch64-apple-darwin/relay-aarch64-apple-darwin.tar.gz
             artifacts/relay-x86_64-unknown-linux-gnu/relay-x86_64-unknown-linux-gnu.tar.gz
             artifacts/relay-aarch64-unknown-linux-gnu/relay-aarch64-unknown-linux-gnu.tar.gz
+            artifacts/relay-x86_64-pc-windows-msvc/relay-x86_64-pc-windows-msvc.zip

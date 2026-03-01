@@ -408,8 +408,13 @@ function SidebarAgentIndicator({ hasOnlineAgent }: { hasOnlineAgent: boolean }) 
     setTimeout(() => setCopiedStep(null), 2000);
   };
 
+  const isWindows = typeof navigator !== "undefined" && navigator.userAgent.toLowerCase().includes("win");
+  const installCommand = isWindows
+    ? "irm https://code.stoff.dev/install.ps1 | iex"
+    : "curl -fsSL https://code.stoff.dev/install.sh | sh";
+
   const steps = [
-    { label: "Install", command: "curl -fsSL https://code.stoff.dev/install.sh | sh" },
+    { label: "Install", command: installCommand },
     { label: "Connect", command: `relay setup --token ${ownerToken}` },
     { label: "Start", command: "relay start" },
   ];

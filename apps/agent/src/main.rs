@@ -9,6 +9,7 @@ use module_bindings::{
     update_tool_command_status, DbConnection, ToolCommand,
 };
 use spacetimedb_sdk::{DbContext, Table, TableWithPrimaryKey};
+#[cfg(unix)]
 use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -28,7 +29,10 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     #[command(about = "Configure the agent (SpacetimeDB URL, database, agent name)")]
-    Setup,
+    Setup {
+        #[arg(long, help = "Owner token from Settings page (skips interactive prompts)")]
+        token: Option<String>,
+    },
     #[command(about = "Show current configuration")]
     Config,
     #[command(about = "Start the agent as a background process")]
@@ -143,10 +147,25 @@ fn read_pid() -> Option<u32> {
     content.trim().parse().ok()
 }
 
+#[cfg(unix)]
 fn is_process_running(pid: u32) -> bool {
     unsafe { libc::kill(pid as i32, 0) == 0 }
 }
 
+#[cfg(windows)]
+fn is_process_running(pid: u32) -> bool {
+    std::process::Command::new("tasklist")
+        .args(["/FI", &format!("PID eq {pid}"), "/NH", "/FO", "CSV"])
+        .output()
+        .ok()
+        .map(|o| {
+            let out = String::from_utf8_lossy(&o.stdout);
+            out.contains(&pid.to_string())
+        })
+        .unwrap_or(false)
+}
+
+#[cfg(unix)]
 fn is_relay_process(pid: u32) -> bool {
     std::process::Command::new("ps")
         .args(["-p", &pid.to_string(), "-o", "comm="])
@@ -159,8 +178,35 @@ fn is_relay_process(pid: u32) -> bool {
         .unwrap_or(false)
 }
 
-fn run_setup() -> Result<()> {
+#[cfg(windows)]
+fn is_relay_process(pid: u32) -> bool {
+    std::process::Command::new("tasklist")
+        .args(["/FI", &format!("PID eq {pid}"), "/NH", "/FO", "CSV"])
+        .output()
+        .ok()
+        .map(|o| {
+            let out = String::from_utf8_lossy(&o.stdout);
+            out.contains("relay")
+        })
+        .unwrap_or(false)
+}
+
+fn run_setup(token: Option<String>) -> Result<()> {
     let existing = load_config().unwrap_or_default();
+
+    if let Some(token) = token {
+        if token.is_empty() {
+            anyhow::bail!("Owner token cannot be empty");
+        }
+        let config = AgentConfig {
+            owner_token: token,
+            ..existing
+        };
+        save_config(&config)?;
+        println!("\n  Config saved to {}", config_path().display());
+        println!("  Run `relay start` to start the agent.\n");
+        return Ok(());
+    }
 
     println!("\n  Relay Agent Setup\n");
 
@@ -283,11 +329,17 @@ fn cmd_start() -> Result<()> {
         .stdout(log_file)
         .stderr(log_err)
         .stdin(std::process::Stdio::null());
+    #[cfg(unix)]
     unsafe {
         cmd.pre_exec(|| {
             libc::setsid();
             Ok(())
         });
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x00000008 | 0x00000200);
     }
     let child = cmd.spawn()?;
 
@@ -305,7 +357,7 @@ fn cmd_start() -> Result<()> {
 fn cmd_stop() -> Result<()> {
     match read_pid() {
         Some(pid) if is_process_running(pid) && is_relay_process(pid) => {
-            unsafe { libc::kill(pid as i32, libc::SIGTERM) };
+            kill_process(pid);
 
             for _ in 0..20 {
                 std::thread::sleep(std::time::Duration::from_millis(100));
@@ -315,7 +367,7 @@ fn cmd_stop() -> Result<()> {
             }
 
             if is_process_running(pid) {
-                unsafe { libc::kill(pid as i32, libc::SIGKILL) };
+                force_kill_process(pid);
             }
 
             std::fs::remove_file(pid_path()).ok();
@@ -330,6 +382,30 @@ fn cmd_stop() -> Result<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(unix)]
+fn kill_process(pid: u32) {
+    unsafe { libc::kill(pid as i32, libc::SIGTERM) };
+}
+
+#[cfg(unix)]
+fn force_kill_process(pid: u32) {
+    unsafe { libc::kill(pid as i32, libc::SIGKILL) };
+}
+
+#[cfg(windows)]
+fn kill_process(pid: u32) {
+    let _ = std::process::Command::new("taskkill")
+        .args(["/PID", &pid.to_string()])
+        .output();
+}
+
+#[cfg(windows)]
+fn force_kill_process(pid: u32) {
+    let _ = std::process::Command::new("taskkill")
+        .args(["/F", "/PID", &pid.to_string()])
+        .output();
 }
 
 fn cmd_status() -> Result<()> {
@@ -374,12 +450,30 @@ fn cmd_logs(follow: bool, lines: usize) -> Result<()> {
     }
 
     if follow {
-        let status = std::process::Command::new("tail")
-            .args(["-f", "-n", &lines.to_string()])
-            .arg(&path)
-            .status()?;
-        if !status.success() {
-            anyhow::bail!("tail exited with {}", status);
+        let content = std::fs::read_to_string(&path)?;
+        let all_lines: Vec<&str> = content.lines().collect();
+        let start = all_lines.len().saturating_sub(lines);
+        for line in &all_lines[start..] {
+            println!("{}", line);
+        }
+
+        let mut last_len = std::fs::metadata(&path)?.len();
+        loop {
+            std::thread::sleep(std::time::Duration::from_millis(500));
+            let current_len = match std::fs::metadata(&path) {
+                Ok(m) => m.len(),
+                Err(_) => break,
+            };
+            if current_len > last_len {
+                let file = std::fs::File::open(&path)?;
+                use std::io::{Read, Seek, SeekFrom};
+                let mut reader = std::io::BufReader::new(file);
+                reader.seek(SeekFrom::Start(last_len))?;
+                let mut new_content = String::new();
+                reader.read_to_string(&mut new_content)?;
+                print!("{new_content}");
+                last_len = current_len;
+            }
         }
     } else {
         let content = std::fs::read_to_string(&path)?;
@@ -404,7 +498,7 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Some(Commands::Setup) => return run_setup(),
+        Some(Commands::Setup { token }) => return run_setup(token),
         Some(Commands::Config) => {
             show_config();
             return Ok(());
@@ -715,6 +809,7 @@ async fn run_command_loop(
     let mut handles: Vec<tokio::task::JoinHandle<()>> = Vec::new();
     let mut session_senders: std::collections::HashMap<String, mpsc::Sender<ToolCommand>> =
         std::collections::HashMap::new();
+    #[cfg(unix)]
     let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
         .expect("failed to install SIGTERM handler");
 
@@ -735,7 +830,12 @@ async fn run_command_loop(
                 shutdown_requested.store(true, std::sync::atomic::Ordering::SeqCst);
                 break;
             },
-            _ = sigterm.recv() => {
+            _ = async {
+                #[cfg(unix)]
+                sigterm.recv().await;
+                #[cfg(windows)]
+                std::future::pending::<()>().await;
+            } => {
                 info!("Received SIGTERM, disconnecting...");
                 shutdown_requested.store(true, std::sync::atomic::Ordering::SeqCst);
                 break;
@@ -946,64 +1046,63 @@ async fn execute_tool(tool_name: &str, tool_args_json: &str) -> Result<String> {
 }
 
 fn hostname() -> String {
-    std::process::Command::new("hostname")
-        .output()
-        .ok()
-        .and_then(|o| String::from_utf8(o.stdout).ok())
-        .map(|s| s.trim().to_string())
-        .unwrap_or_else(|| "unknown".to_string())
+    std::env::var("HOSTNAME")
+        .or_else(|_| std::env::var("COMPUTERNAME"))
+        .unwrap_or_else(|_| {
+            std::process::Command::new("hostname")
+                .output()
+                .ok()
+                .and_then(|o| String::from_utf8(o.stdout).ok())
+                .map(|s| s.trim().to_string())
+                .unwrap_or_else(|| "unknown".to_string())
+        })
 }
 
 fn compute_workspace_tree(workdir: &str) -> String {
-    let output = std::process::Command::new("find")
-        .arg(".")
-        .arg("-maxdepth")
-        .arg("3")
-        .arg("-not")
-        .arg("-path")
-        .arg("*/.git/*")
-        .arg("-not")
-        .arg("-path")
-        .arg("*/node_modules/*")
-        .arg("-not")
-        .arg("-path")
-        .arg("*/target/*")
-        .arg("-not")
-        .arg("-path")
-        .arg("*/.next/*")
-        .arg("-not")
-        .arg("-path")
-        .arg("*/.turbo/*")
-        .arg("-not")
-        .arg("-path")
-        .arg("*/dist/*")
-        .arg("-not")
-        .arg("-path")
-        .arg("*/module_bindings/*")
-        .arg("-not")
-        .arg("-name")
-        .arg(".DS_Store")
-        .arg("-not")
-        .arg("-name")
-        .arg("*.lock")
-        .arg("-not")
-        .arg("-name")
-        .arg("*.d")
-        .current_dir(workdir)
-        .output();
+    use walkdir::WalkDir;
 
-    match output {
-        Ok(o) if o.status.success() => {
-            let tree = String::from_utf8_lossy(&o.stdout);
-            let mut lines: Vec<&str> = tree.lines().collect();
-            lines.sort();
-            let result = lines.join("\n");
-            if result.len() > 9000 {
-                result[..9000].to_string()
-            } else {
-                result
+    const SKIP_DIRS: &[&str] = &[
+        ".git", "node_modules", "target", ".next", ".turbo", "dist", "module_bindings",
+    ];
+    const SKIP_FILES: &[&str] = &[".DS_Store"];
+    const SKIP_EXTS: &[&str] = &["lock", "d"];
+
+    let mut lines: Vec<String> = Vec::new();
+    let walker = WalkDir::new(workdir)
+        .max_depth(3)
+        .follow_links(false)
+        .into_iter()
+        .filter_entry(|entry| {
+            let name = entry.file_name().to_string_lossy();
+            if entry.file_type().is_dir() && entry.depth() > 0 {
+                return !SKIP_DIRS.contains(&name.as_ref());
+            }
+            true
+        });
+
+    for entry in walker.flatten() {
+        let name = entry.file_name().to_string_lossy();
+        if SKIP_FILES.contains(&name.as_ref()) {
+            continue;
+        }
+        if let Some(ext) = entry.path().extension().and_then(|e| e.to_str()) {
+            if SKIP_EXTS.contains(&ext) {
+                continue;
             }
         }
-        _ => String::new(),
+        if let Ok(rel) = entry.path().strip_prefix(workdir) {
+            let path_str = rel.to_string_lossy();
+            if !path_str.is_empty() {
+                lines.push(format!("./{}", path_str.replace('\\', "/")));
+            }
+        }
+    }
+
+    lines.sort();
+    let result = lines.join("\n");
+    if result.len() > 9000 {
+        result.chars().take(9000).collect()
+    } else {
+        result
     }
 }

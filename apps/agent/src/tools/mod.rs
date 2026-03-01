@@ -62,16 +62,22 @@ mod tests {
         assert!(result.unwrap_err().to_string().contains("outside the home directory"));
     }
 
+    fn home_dir() -> String {
+        std::env::var("HOME")
+            .or_else(|_| std::env::var("USERPROFILE"))
+            .unwrap()
+    }
+
     #[test]
     fn validate_path_accepts_home_subpath() {
-        let home = std::env::var("HOME").unwrap();
+        let home = home_dir();
         let result = validate_path(&home);
         assert!(result.is_ok());
     }
 
     #[test]
     fn validate_path_accepts_nonexistent_under_home() {
-        let home = std::env::var("HOME").unwrap();
+        let home = home_dir();
         let path = format!("{}/nonexistent_test_file_abc123.txt", home);
         let result = validate_path(&path);
         assert!(result.is_ok());

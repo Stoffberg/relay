@@ -33,11 +33,16 @@ function SettingsPage() {
     setTimeout(() => setCopiedStep(null), 2000);
   };
 
+  const isWindows = typeof navigator !== "undefined" && navigator.userAgent.toLowerCase().includes("win");
+  const installCommand = isWindows
+    ? "irm https://code.stoff.dev/install.ps1 | iex"
+    : "curl -fsSL https://code.stoff.dev/install.sh | sh";
+
   const steps = [
     {
       label: "Install",
-      description: "Auto-detects your platform",
-      command: "curl -fsSL https://code.stoff.dev/install.sh | sh",
+      description: isWindows ? "For Windows" : "Auto-detects your platform",
+      command: installCommand,
     },
     {
       label: "Connect",

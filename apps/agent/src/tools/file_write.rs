@@ -37,7 +37,7 @@ mod tests {
     use tempfile::TempDir;
 
     fn test_dir() -> TempDir {
-        tempfile::tempdir_in(std::env::var("HOME").unwrap()).unwrap()
+        tempfile::tempdir_in(std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")).unwrap()).unwrap()
     }
 
     #[tokio::test]

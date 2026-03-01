@@ -5,19 +5,35 @@ const TIMEOUT_SECS: u64 = 120;
 
 pub async fn execute(command: &str, workdir: Option<&str>) -> Result<String> {
     let existing_path = std::env::var("PATH").unwrap_or_default();
-    let path = if let Ok(home) = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")) {
-        let extra_dirs = format!(
-            "{}/.bun/bin:{}/.cargo/bin:{}/.local/bin:/opt/homebrew/bin",
-            home, home, home
-        );
-        format!("{extra_dirs}:{existing_path}")
+
+    let mut cmd = if cfg!(windows) {
+        let mut c = tokio::process::Command::new("cmd");
+        c.args(["/C", command]);
+        c
     } else {
-        format!("/opt/homebrew/bin:{existing_path}")
+        let mut c = tokio::process::Command::new("sh");
+        c.args(["-c", command]);
+        c
     };
 
-    let mut cmd = tokio::process::Command::new("sh");
-    cmd.arg("-c").arg(command);
-    cmd.env("PATH", &path);
+    if let Ok(home) = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")) {
+        let path = if cfg!(windows) {
+            let extra = format!(
+                "{}\\.bun\\bin;{}\\.cargo\\bin;{}\\.local\\bin",
+                home, home, home
+            );
+            format!("{extra};{existing_path}")
+        } else {
+            let extra = format!(
+                "{}/.bun/bin:{}/.cargo/bin:{}/.local/bin:/opt/homebrew/bin",
+                home, home, home
+            );
+            format!("{extra}:{existing_path}")
+        };
+        cmd.env("PATH", &path);
+    }
+
+    #[cfg(unix)]
     cmd.env("LANG", "en_US.UTF-8");
 
     if let Some(dir) = workdir {
@@ -26,7 +42,17 @@ pub async fn execute(command: &str, workdir: Option<&str>) -> Result<String> {
     }
 
     #[cfg(unix)]
-    unsafe { cmd.pre_exec(|| { libc::setpgid(0, 0); Ok(()) }); }
+    unsafe {
+        cmd.pre_exec(|| {
+            libc::setpgid(0, 0);
+            Ok(())
+        });
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x00000200);
+    }
 
     cmd.kill_on_drop(true);
     let output = match tokio::time::timeout(
@@ -93,6 +119,12 @@ fn truncate_output(bytes: &[u8]) -> String {
 mod tests {
     use super::*;
 
+    fn home_dir() -> String {
+        std::env::var("HOME")
+            .or_else(|_| std::env::var("USERPROFILE"))
+            .unwrap()
+    }
+
     #[tokio::test]
     async fn exec_simple_command() {
         let result = execute("echo hello", None).await.unwrap();
@@ -100,12 +132,14 @@ mod tests {
     }
 
     #[tokio::test]
+    #[cfg(unix)]
     async fn exec_command_with_exit_code() {
         let err = execute("exit 42", None).await.unwrap_err();
         assert!(err.to_string().contains("Exit code: 42"));
     }
 
     #[tokio::test]
+    #[cfg(unix)]
     async fn exec_command_with_stderr() {
         let result = execute("echo out && echo err >&2", None).await.unwrap();
         assert!(result.contains("out"));
@@ -113,20 +147,23 @@ mod tests {
     }
 
     #[tokio::test]
+    #[cfg(unix)]
     async fn exec_no_output() {
         let result = execute("true", None).await.unwrap();
         assert!(result.contains("command succeeded with no output"));
     }
 
     #[tokio::test]
+    #[cfg(unix)]
     async fn exec_with_workdir() {
-        let dir = tempfile::tempdir_in(std::env::var("HOME").unwrap()).unwrap();
+        let dir = tempfile::tempdir_in(home_dir()).unwrap();
         let result = execute("pwd", Some(dir.path().to_str().unwrap())).await.unwrap();
         let canonical = dir.path().canonicalize().unwrap();
         assert!(result.trim().ends_with(canonical.file_name().unwrap().to_str().unwrap()));
     }
 
     #[tokio::test]
+    #[cfg(unix)]
     async fn exec_multiline_output() {
         let result = execute("printf 'a\\nb\\nc'", None).await.unwrap();
         assert_eq!(result.trim(), "a\nb\nc");
