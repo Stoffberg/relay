@@ -17,4 +17,5 @@ export default {
   agentId: __t.string(),
   toolName: __t.string(),
   toolArgs: __t.string(),
+  status: __t.string(),
 };

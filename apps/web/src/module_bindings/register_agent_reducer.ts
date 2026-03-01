@@ -15,4 +15,5 @@ export default {
   name: __t.string(),
   ownerToken: __t.string(),
   workdir: __t.string(),
+  workspaceTree: __t.string(),
 };

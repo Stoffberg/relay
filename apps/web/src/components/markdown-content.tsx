@@ -29,7 +29,7 @@ function CopyButton({ code }: { code: string }) {
     navigator.clipboard.writeText(code).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
-    }).catch(() => {});
+    }).catch((e) => console.error("Clipboard copy failed:", e));
   }, [code]);
 
   return (

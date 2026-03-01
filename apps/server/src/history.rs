@@ -47,11 +47,21 @@ pub fn fetch_history(conn: &DbConnection, session_id: &str) -> Vec<LLMMessage> {
         .filter(|c| c.session_id == session_id)
         .collect();
 
-    let tool_results: Vec<_> = conn.db.tool_result().iter().collect();
+    let tool_cmd_ids: std::collections::HashSet<u64> = tool_commands.iter().map(|c| c.id).collect();
+    let tool_results: Vec<_> = conn
+        .db
+        .tool_result()
+        .iter()
+        .filter(|r| tool_cmd_ids.contains(&r.tool_command_id))
+        .collect();
 
     let mut result = Vec::new();
 
     for m in &messages {
+        if m.role == "explore" {
+            continue;
+        }
+
         let mut text = content_by_msg
             .get(m.id.as_str())
             .map(|parts| parts.iter().map(|p| p.content.as_str()).collect::<String>())
@@ -112,7 +122,14 @@ pub fn fetch_history(conn: &DbConnection, session_id: &str) -> Vec<LLMMessage> {
                         .map(|r| {
                             if r.success {
                                 if r.output.len() > 30000 {
-                                    format!("{}... (truncated)", &r.output[..30000])
+                                    let boundary = r
+                                        .output
+                                        .char_indices()
+                                        .take_while(|(i, _)| *i <= 30000)
+                                        .last()
+                                        .map(|(i, c)| i + c.len_utf8())
+                                        .unwrap_or(0);
+                                    format!("{}... (truncated)", &r.output[..boundary])
                                 } else {
                                     r.output.clone()
                                 }

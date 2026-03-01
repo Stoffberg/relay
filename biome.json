@@ -13,7 +13,7 @@
     "enabled": true,
     "formatWithErrors": false,
     "indentStyle": "space",
-    "indentSize": 2,
+    "indentWidth": 2,
     "lineEnding": "lf",
     "lineWidth": 100,
     "attributePosition": "auto",
@@ -33,9 +33,6 @@
         "noCommentText": "off"
       },
       "style": {
-        "useNamingConvention": "error",
-        "noImplicitAny": "error",
-        "noUnusedVariables": "error"
       }
     },
     "ignore": ["node_modules", "dist", "build", "target"]
@@ -43,18 +40,11 @@
   "javascript": {
     "formatter": {
       "quoteStyle": "double",
-      "trailingComma": "es5",
+      "trailingCommas": "es5",
       "semicolons": "always"
     },
     "parser": {
       "unsafeParameterDecoratorsEnabled": true
-    }
-  },
-  "typescript": {
-    "formatter": {
-      "quoteStyle": "double",
-      "trailingComma": "es5",
-      "semicolons": "always"
     }
   },
   "json": {

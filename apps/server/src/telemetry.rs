@@ -41,7 +41,7 @@ impl Visit for FieldVisitor {
 }
 
 pub struct AxiomLayer {
-    tx: mpsc::UnboundedSender<Value>,
+    tx: mpsc::Sender<Value>,
 }
 
 impl<S> Layer<S> for AxiomLayer
@@ -70,7 +70,7 @@ where
             Value::from(iso8601_now()),
         );
 
-        let _ = self.tx.send(Value::Object(visitor.fields));
+        let _ = self.tx.try_send(Value::Object(visitor.fields));
     }
 }
 
@@ -118,9 +118,12 @@ pub fn try_init_axiom() -> Option<AxiomLayer> {
     let token = std::env::var("AXIOM_TOKEN").ok()?;
     let dataset = std::env::var("AXIOM_DATASET").ok()?;
 
-    let (tx, rx) = mpsc::unbounded_channel::<Value>();
+    let (tx, rx) = mpsc::channel::<Value>(10_000);
 
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .unwrap_or_default();
     let url = format!("https://api.axiom.co/v1/datasets/{dataset}/ingest");
 
     tokio::spawn(run_batcher(client, url, token, rx));
@@ -133,7 +136,7 @@ async fn run_batcher(
     client: reqwest::Client,
     url: String,
     token: String,
-    mut rx: mpsc::UnboundedReceiver<Value>,
+    mut rx: mpsc::Receiver<Value>,
 ) {
     let mut batch: Vec<Value> = Vec::with_capacity(256);
     let flush_interval = std::time::Duration::from_secs(2);
@@ -173,7 +176,7 @@ async fn run_batcher(
 }
 
 async fn flush(client: &reqwest::Client, url: &str, token: &str, batch: &mut Vec<Value>) {
-    let events: Vec<Value> = batch.drain(..).collect();
+    let events: Vec<Value> = std::mem::take(batch);
     let count = events.len();
 
     match client

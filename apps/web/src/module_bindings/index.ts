@@ -47,6 +47,7 @@ import CreateVerificationReducer from "./create_verification_reducer";
 import DeleteMessageReducer from "./delete_message_reducer";
 import DeleteSessionReducer from "./delete_session_reducer";
 import FailMessageReducer from "./fail_message_reducer";
+import FinalizeToolCommandReducer from "./finalize_tool_command_reducer";
 import ReapStaleAgentsReducer from "./reap_stale_agents_reducer";
 import RegisterAgentReducer from "./register_agent_reducer";
 import SendMessageReducer from "./send_message_reducer";
@@ -56,6 +57,7 @@ import UpdateSessionModelReducer from "./update_session_model_reducer";
 import UpdateSessionStatusReducer from "./update_session_status_reducer";
 import UpdateSessionSystemPromptReducer from "./update_session_system_prompt_reducer";
 import UpdateSessionTitleReducer from "./update_session_title_reducer";
+import UpdateToolCommandArgsReducer from "./update_tool_command_args_reducer";
 import UpdateToolCommandStatusReducer from "./update_tool_command_status_reducer";
 
 // Import all procedure arg schemas
@@ -191,6 +193,7 @@ const reducersSchema = __reducers(
   __reducerSchema("delete_message", DeleteMessageReducer),
   __reducerSchema("delete_session", DeleteSessionReducer),
   __reducerSchema("fail_message", FailMessageReducer),
+  __reducerSchema("finalize_tool_command", FinalizeToolCommandReducer),
   __reducerSchema("reap_stale_agents", ReapStaleAgentsReducer),
   __reducerSchema("register_agent", RegisterAgentReducer),
   __reducerSchema("send_message", SendMessageReducer),
@@ -200,6 +203,7 @@ const reducersSchema = __reducers(
   __reducerSchema("update_session_status", UpdateSessionStatusReducer),
   __reducerSchema("update_session_system_prompt", UpdateSessionSystemPromptReducer),
   __reducerSchema("update_session_title", UpdateSessionTitleReducer),
+  __reducerSchema("update_tool_command_args", UpdateToolCommandArgsReducer),
   __reducerSchema("update_tool_command_status", UpdateToolCommandStatusReducer),
 );
 

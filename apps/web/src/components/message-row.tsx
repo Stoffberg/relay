@@ -1,4 +1,4 @@
-import { memo, useCallback, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChatMessage, ChatToolCall } from "../lib/chat-store";
 import type { Verification } from "../spacetime";
 import { MarkdownContent } from "./markdown-content";
@@ -53,7 +53,7 @@ function UserMessageRow({ msg }: { msg: ChatMessage }) {
     if (!editText.trim() || !msg.sessionId) return;
     setEditing(false);
     try {
-      await fetch(`${API_URL}/edit`, {
+      const res = await fetch(`${API_URL}/edit`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -62,7 +62,12 @@ function UserMessageRow({ msg }: { msg: ChatMessage }) {
           content: editText.trim(),
         }),
       });
-    } catch {}
+      if (!res.ok) {
+        console.error("Edit failed:", res.status, await res.text());
+      }
+    } catch (e) {
+      console.error("Edit failed:", e);
+    }
   }, [editText, msg.id, msg.sessionId]);
 
   if (editing) {
@@ -120,7 +125,7 @@ function AssistantMessageRow({ msg, verification }: { msg: ChatMessage; verifica
   const handleRegenerate = useCallback(async () => {
     if (!msg.sessionId) return;
     try {
-      await fetch(`${API_URL}/regenerate`, {
+      const res = await fetch(`${API_URL}/regenerate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -128,7 +133,12 @@ function AssistantMessageRow({ msg, verification }: { msg: ChatMessage; verifica
           message_id: msg.id,
         }),
       });
-    } catch {}
+      if (!res.ok) {
+        console.error("Regenerate failed:", res.status, await res.text());
+      }
+    } catch (e) {
+      console.error("Regenerate failed:", e);
+    }
   }, [msg.id, msg.sessionId]);
 
   return (
@@ -267,8 +277,21 @@ function ToolCallBlock({ calls }: { calls: ChatToolCall[] }) {
 }
 
 function ToolCallPill({ tc, isExpanded, onToggle }: { tc: ChatToolCall; isExpanded: boolean; onToggle: () => void }) {
-  const isPending = tc.status === "pending" || tc.status === "executing";
+  const isPending = tc.status === "generating" || tc.status === "pending" || tc.status === "executing";
   const isError = tc.status === "error";
+  const preRef = useRef<HTMLPreElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const [hasOverflow, setHasOverflow] = useState(false);
+
+  useEffect(() => {
+    const el = preRef.current;
+    if (!el) return;
+    const check = () => setHasOverflow(el.scrollHeight > el.clientHeight);
+    check();
+    const observer = new ResizeObserver(check);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [isExpanded, tc.output, tc.error]);
 
   const argSummary = useMemo(() => {
     try {
@@ -279,11 +302,29 @@ function ToolCallPill({ tc, isExpanded, onToggle }: { tc: ChatToolCall; isExpand
     }
   }, [tc.toolArgs, tc.toolName]);
 
+  const handleToggle = useCallback(() => {
+    const btn = buttonRef.current;
+    if (!btn) { onToggle(); return; }
+    const rectBefore = btn.getBoundingClientRect();
+    onToggle();
+    requestAnimationFrame(() => {
+      const rectAfter = btn.getBoundingClientRect();
+      const delta = rectAfter.top - rectBefore.top;
+      if (Math.abs(delta) > 1) {
+        const scroller = btn.closest(".overflow-y-auto");
+        if (scroller) {
+          scroller.scrollTop += delta;
+        }
+      }
+    });
+  }, [onToggle]);
+
   return (
     <div className="w-full">
       <button
+        ref={buttonRef}
         type="button"
-        onClick={onToggle}
+        onClick={handleToggle}
         className="w-full text-left"
         aria-expanded={isExpanded}
         aria-label={`${tc.toolName} tool call, ${isError ? "failed" : isPending ? "running" : "succeeded"}`}
@@ -318,10 +359,12 @@ function ToolCallPill({ tc, isExpanded, onToggle }: { tc: ChatToolCall; isExpand
                 <span className="inline-block text-[10px] font-medium text-warning mb-1 px-1.5 py-0.5 rounded bg-warning/10">Truncated</span>
               )}
               <div className="relative">
-                <pre className={`text-[11px] font-mono whitespace-pre-wrap break-all max-h-[400px] overflow-y-auto ${tc.success === false ? "text-danger" : "text-body"}`}>
+                <pre ref={preRef} className={`text-[11px] font-mono whitespace-pre-wrap break-all max-h-[400px] overflow-y-auto ${tc.success === false ? "text-danger" : "text-body"}`}>
                   {tc.error || tc.output}
                 </pre>
-                <div className="absolute bottom-0 left-0 right-0 h-6 bg-gradient-to-t from-surface to-transparent pointer-events-none" />
+                {hasOverflow && (
+                  <div className="absolute bottom-0 left-0 right-0 h-6 bg-gradient-to-t from-surface to-transparent pointer-events-none" />
+                )}
               </div>
             </div>
           ) : isPending ? (
@@ -340,16 +383,24 @@ function formatArgSummary(toolName: string, args: Record<string, unknown>): stri
     case "file_read":
     case "file_write":
     case "file_edit":
-    case "list_dir":
       return typeof args.path === "string" ? shortenPath(args.path) : "";
     case "shell_exec":
       return typeof args.command === "string"
         ? args.command.length > 60 ? args.command.slice(0, 57) + "..." : args.command
         : "";
-    case "glob":
-      return typeof args.pattern === "string" ? args.pattern : "";
+    case "glob": {
+      const pat = typeof args.pattern === "string" ? args.pattern : "";
+      const dir = typeof args.path === "string" ? shortenPath(args.path) : "";
+      return dir ? `${pat} in ${dir}` : pat;
+    }
     case "grep":
       return `${args.pattern || ""} in ${typeof args.path === "string" ? shortenPath(args.path) : ""}`;
+    case "wait": {
+      const total = typeof args.seconds === "number" ? args.seconds : 0;
+      const remaining = typeof args.remaining === "number" ? args.remaining : total;
+      if (remaining === 0) return `${total}s`;
+      return `${remaining}s remaining`;
+    }
     default:
       return "";
   }

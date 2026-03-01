@@ -15,6 +15,13 @@ export function markSubscriptionReady() {
   }
 }
 
+export function resetSubscriptionReady() {
+  _subscriptionReady = false;
+  for (const listener of _readyListeners) {
+    listener();
+  }
+}
+
 export function useSubscriptionReady(): boolean {
   return useSyncExternalStore(
     (onStoreChange) => {

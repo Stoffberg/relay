@@ -8,20 +8,22 @@ use tracing::info;
 use crate::history::fetch_history;
 use crate::module_bindings::agent_table::AgentTableAccess;
 use crate::module_bindings::complete_message_reducer::complete_message;
-use crate::module_bindings::create_verification_reducer::create_verification;
+use crate::module_bindings::create_tool_command_reducer::create_tool_command;
 use crate::module_bindings::fail_message_reducer::fail_message;
+use crate::module_bindings::finalize_tool_command_reducer::finalize_tool_command;
 use crate::module_bindings::message_table::MessageTableAccess;
 use crate::module_bindings::send_message_reducer::send_message;
 use crate::module_bindings::session_table::SessionTableAccess;
-use crate::module_bindings::update_session_status_reducer::update_session_status;
-use crate::prompts::build_system_prompt;
 use crate::module_bindings::set_message_tokens_reducer::set_message_tokens;
-use crate::state::{AppState, LLMMessage, LLMRequest, LLMResult, ProviderPreferences, QueuedMessage, TokenUsage};
+use crate::module_bindings::tool_command_table::ToolCommandTableAccess;
+use crate::module_bindings::update_session_status_reducer::update_session_status;
+use crate::module_bindings::update_tool_command_status_reducer::update_tool_command_status;
+use crate::prompts::build_system_prompt;
+use crate::state::{
+    AppState, LLMMessage, LLMResult, QueuedMessage, TokenUsage, ToolCall,
+};
 use crate::streaming::stream_llm_response;
-use crate::tools::{dispatch_tool_call, tool_definitions};
-
-const VERIFICATION_MODEL: &str = "google/gemini-3-flash-preview:nitro";
-const MAX_VERIFICATION_ROUNDS: u32 = 3;
+use crate::tools::{dispatch_tool_call, execute_wait, is_wait_tool_call, tool_definitions};
 
 pub async fn run_session_queue(
     state: &AppState,
@@ -62,15 +64,25 @@ pub async fn run_session_queue(
             tracing::warn!(session_id, "Failed to set session to streaming: {e}");
         }
 
-        if let Err(e) = run_agent_loop(state, session_id, &queued.content, &queued.owner_token, &cancel_flag).await {
-            if cancel_flag.load(Ordering::SeqCst) {
+        if let Err(e) = run_agent_loop(
+            state,
+            session_id,
+            &queued.content,
+            &queued.owner_token,
+            queued.model.as_deref(),
+            &cancel_flag,
+        )
+        .await
+        {
+            let was_cancelled = cancel_flag.load(Ordering::SeqCst);
+            if was_cancelled {
                 info!("Generation stopped by user for session {session_id}");
             } else {
                 tracing::error!("Agent loop failed for session {session_id}: {e}");
             }
             for msg in state.conn.db.message().iter() {
                 if msg.session_id == session_id && msg.status == "streaming" {
-                    if cancel_flag.load(Ordering::SeqCst) {
+                    if was_cancelled {
                         let _ = state.conn.reducers.complete_message(msg.id.clone());
                     } else if let Err(e2) = state
                         .conn
@@ -78,6 +90,20 @@ pub async fn run_session_queue(
                         .fail_message(msg.id.clone(), format!("Processing failed: {e}"))
                     {
                         tracing::warn!(session_id, "Failed to mark message as failed: {e2}");
+                    }
+                }
+            }
+            if was_cancelled {
+                for cmd in state.conn.db.tool_command().iter() {
+                    if cmd.session_id == session_id
+                        && (cmd.status == "pending"
+                            || cmd.status == "executing"
+                            || cmd.status == "generating")
+                    {
+                        let _ = state
+                            .conn
+                            .reducers
+                            .update_tool_command_status(cmd.id, "error".to_string());
                     }
                 }
             }
@@ -122,19 +148,14 @@ fn store_token_usage(state: &AppState, message_id: &str, usage: Option<TokenUsag
     }
 }
 
-fn has_online_agent(state: &AppState) -> bool {
-    let observed = state.agent_heartbeat_observed.lock().unwrap();
-    let now = std::time::Instant::now();
-    state.conn.db.agent().iter().any(|a| {
-        a.status == "online"
-            && observed
-                .get(&a.id)
-                .map(|t| now.duration_since(*t) < std::time::Duration::from_secs(90))
-                .unwrap_or(false)
-    })
+#[derive(Clone)]
+pub struct AgentInfo {
+    pub id: String,
+    pub workdir: String,
+    pub workspace_tree: String,
 }
 
-pub fn find_online_agent(state: &AppState, owner_token: &str) -> Option<(String, String)> {
+pub fn find_online_agent(state: &AppState, owner_token: &str) -> Option<AgentInfo> {
     let observed = state.agent_heartbeat_observed.lock().unwrap();
     let now = std::time::Instant::now();
     state
@@ -150,11 +171,243 @@ pub fn find_online_agent(state: &AppState, owner_token: &str) -> Option<(String,
                     .map(|t| now.duration_since(*t) < std::time::Duration::from_secs(90))
                     .unwrap_or(false)
         })
-        .map(|a| (a.id.clone(), a.workdir.clone()))
+        .map(|a| AgentInfo {
+            id: a.id.clone(),
+            workdir: a.workdir.clone(),
+            workspace_tree: a.workspace_tree.clone(),
+        })
 }
 
-fn find_agent_id(state: &AppState, owner_token: &str) -> Option<String> {
-    find_online_agent(state, owner_token).map(|(id, _)| id)
+const EXPLORE_TOOL_NAME: &str = "explore";
+
+fn read_only_tool_names() -> &'static [&'static str] {
+    &["file_read", "grep", "glob"]
+}
+
+fn explore_system_prompt(workspace_tree: Option<&str>, workdir: Option<&str>) -> String {
+    let mut prompt = String::from(
+        "You are an exploration agent. Your job is to quickly find information in the codebase and return a structured report.\n\
+        \n\
+        RULES:\n\
+        1. Locate, don't analyze. Find the relevant files, lines, and content, then report what you found.\n\
+        2. Use grep to search for patterns. Use file_read to read specific files. Use glob to find files by pattern.\n\
+        3. Be thorough but fast. Call multiple tools in a single response when possible.\n\
+        4. Return a clear, factual report of what you found. Include file paths and line numbers.\n\
+        5. No opinions, no suggestions, no speculation. Just the facts.\n\
+        6. Keep your final answer concise. File paths with brief descriptions of what's at each location."
+    );
+    if let Some(workdir) = workdir {
+        prompt.push_str(&format!("\n\nWorking directory: `{}`", workdir));
+    }
+    if let Some(tree) = workspace_tree {
+        if !tree.is_empty() {
+            prompt.push_str(&format!(
+                "\n\nFile tree:\n```\n{}\n```",
+                tree
+            ));
+        }
+    }
+    prompt
+}
+
+async fn run_explore_subagent(
+    state: &AppState,
+    session_id: &str,
+    query: &str,
+    agent_info: &AgentInfo,
+    cancel_flag: &AtomicBool,
+) -> Result<String> {
+    let explore_model = match &state.exploration_model {
+        Some(m) => m.clone(),
+        None => return Ok("Explore subagent not configured (no exploration model set)".to_string()),
+    };
+
+    let workspace_tree = if agent_info.workspace_tree.is_empty() {
+        None
+    } else {
+        Some(agent_info.workspace_tree.as_str())
+    };
+
+    let system_prompt = explore_system_prompt(workspace_tree, Some(&agent_info.workdir));
+
+    let read_only: Vec<_> = tool_definitions()
+        .into_iter()
+        .filter(|t| read_only_tool_names().contains(&t.function.name.as_str()))
+        .collect();
+
+    let mut conversation = vec![
+        LLMMessage {
+            role: "system".to_string(),
+            content: Some(system_prompt),
+            tool_calls: None,
+            tool_call_id: None,
+        },
+        LLMMessage {
+            role: "user".to_string(),
+            content: Some(query.to_string()),
+            tool_calls: None,
+            tool_call_id: None,
+        },
+    ];
+
+    let max_iterations = 8;
+    let explore_start = Instant::now();
+
+    for iteration in 0..max_iterations {
+        if cancel_flag.load(Ordering::SeqCst) {
+            return Err(anyhow::anyhow!("Explore cancelled by user"));
+        }
+
+        let explore_msg_id = uuid::Uuid::new_v4().to_string();
+        if let Err(e) = state.conn.reducers.send_message(
+            explore_msg_id.clone(),
+            session_id.to_string(),
+            "explore".to_string(),
+            "streaming".to_string(),
+        ) {
+            tracing::error!("Failed to create explore message: {e}");
+            return Err(anyhow::anyhow!("Failed to create explore message"));
+        }
+
+        let early_dispatched: Arc<std::sync::Mutex<std::collections::HashSet<String>>> =
+            Arc::new(std::sync::Mutex::new(std::collections::HashSet::new()));
+        let conn = &state.conn;
+        let mid = explore_msg_id.clone();
+        let sid = session_id.to_string();
+        let aid = agent_info.id.clone();
+        let dispatched = early_dispatched.clone();
+        let early_dispatch: Option<crate::streaming::EarlyDispatchFn<'_>> =
+            Some(Box::new(move |tc: &ToolCall| {
+                if conn
+                    .reducers
+                    .create_tool_command(
+                        tc.id.clone(),
+                        mid.clone(),
+                        sid.clone(),
+                        aid.clone(),
+                        tc.function.name.clone(),
+                        tc.function.arguments.clone(),
+                        "pending".to_string(),
+                    )
+                    .is_ok()
+                {
+                    dispatched.lock().unwrap().insert(tc.id.clone());
+                }
+            }));
+
+        let result = stream_llm_response(
+            state,
+            session_id,
+            &conversation,
+            &explore_msg_id,
+            Some(read_only.clone()),
+            Some(&explore_model),
+            early_dispatch,
+            None,
+            true,
+            Some(cancel_flag),
+        )
+        .await?;
+
+        match result {
+            LLMResult::TextComplete(text, usage) => {
+                store_token_usage(state, &explore_msg_id, usage);
+                let _ = state.conn.reducers.complete_message(explore_msg_id);
+                let ms = explore_start.elapsed().as_millis() as u64;
+                info!(
+                    session_id,
+                    iteration,
+                    ms,
+                    text_len = text.len(),
+                    "Explore subagent complete"
+                );
+                return Ok(text);
+            }
+            LLMResult::ToolCalls(text, tool_calls, usage) => {
+                store_token_usage(state, &explore_msg_id, usage);
+                let _ = state.conn.reducers.complete_message(explore_msg_id.clone());
+
+                conversation.push(LLMMessage {
+                    role: "assistant".to_string(),
+                    content: if text.is_empty() { None } else { Some(text) },
+                    tool_calls: Some(tool_calls.clone()),
+                    tool_call_id: None,
+                });
+
+                let dispatched_set = early_dispatched.lock().unwrap().clone();
+
+                let futures: Vec<_> = tool_calls
+                    .iter()
+                    .map(|tc| {
+                        let session_id = session_id.to_string();
+                        let explore_msg_id = explore_msg_id.clone();
+                        let agent_id = agent_info.id.clone();
+                        let already_dispatched = dispatched_set.contains(&tc.id);
+                        async move {
+                            let result = dispatch_tool_call(
+                                state,
+                                &session_id,
+                                &explore_msg_id,
+                                &agent_id,
+                                tc,
+                                already_dispatched,
+                                cancel_flag,
+                            )
+                            .await;
+                            (tc, result)
+                        }
+                    })
+                    .collect();
+
+                let results = futures::future::join_all(futures).await;
+
+                for (tc, result) in results {
+                    let tool_result = result?;
+                    conversation.push(LLMMessage {
+                        role: "tool".to_string(),
+                        content: Some(tool_result),
+                        tool_calls: None,
+                        tool_call_id: Some(tc.id.clone()),
+                    });
+                }
+
+                info!(
+                    session_id,
+                    iteration,
+                    tool_count = tool_calls.len(),
+                    ms = explore_start.elapsed().as_millis() as u64,
+                    "Explore iteration complete"
+                );
+            }
+            LLMResult::Error(e) => {
+                let _ = state.conn.reducers.fail_message(explore_msg_id, e.clone());
+                return Ok(format!("Explore failed: {e}"));
+            }
+        }
+    }
+
+    let final_text: String = conversation
+        .iter()
+        .filter(|m| m.role == "tool")
+        .filter_map(|m| m.content.clone())
+        .collect::<Vec<_>>()
+        .join("\n---\n");
+
+    Ok(if final_text.is_empty() {
+        "Explore subagent completed but found no results.".to_string()
+    } else {
+        final_text
+    })
+}
+
+fn is_explore_tool_call(tc: &ToolCall) -> bool {
+    tc.function.name == EXPLORE_TOOL_NAME
+}
+
+fn parse_explore_query(tc: &ToolCall) -> Option<String> {
+    serde_json::from_str::<serde_json::Value>(&tc.function.arguments)
+        .ok()
+        .and_then(|v| v.get("query").and_then(|q| q.as_str().map(String::from)))
 }
 
 async fn run_agent_loop(
@@ -162,10 +415,12 @@ async fn run_agent_loop(
     session_id: &str,
     user_message: &str,
     owner_token: &str,
+    queued_model: Option<&str>,
     cancel_flag: &AtomicBool,
 ) -> Result<()> {
     let mut history = fetch_history(&state.conn, session_id);
-    let use_tools = find_online_agent(state, owner_token).is_some();
+    let agent_info = find_online_agent(state, owner_token);
+    let use_tools = agent_info.is_some();
 
     let max_history_chars: usize = 600_000;
     let total_chars: usize = history
@@ -228,16 +483,32 @@ async fn run_agent_loop(
         }
     }
 
-    let session = state.conn.db.session().id().find(&session_id.to_string());
-    let session_model = session.as_ref().and_then(|s| s.model.clone());
+    let session = state
+        .conn
+        .db
+        .session()
+        .id()
+        .find(&session_id.to_string());
+    let session_model = queued_model
+        .map(|m| m.to_string())
+        .or_else(|| session.as_ref().and_then(|s| s.model.clone()));
     let custom_system_prompt = session.as_ref().and_then(|s| s.system_prompt.clone());
 
-    let agent_workdir = if use_tools {
-        find_online_agent(state, owner_token).map(|(_, w)| w)
+    let (agent_workdir, workspace_tree) = if let Some(ref info) = agent_info {
+        (
+            Some(info.workdir.as_str()),
+            if info.workspace_tree.is_empty() {
+                None
+            } else {
+                Some(info.workspace_tree.as_str())
+            },
+        )
     } else {
-        None
+        (None, None)
     };
-    let mut system_prompt = build_system_prompt(use_tools, agent_workdir.as_deref());
+
+    let has_explore = state.exploration_model.is_some() && use_tools;
+    let mut system_prompt = build_system_prompt(use_tools, has_explore, agent_workdir, workspace_tree);
 
     if let Some(ref custom) = custom_system_prompt {
         if !custom.is_empty() {
@@ -254,9 +525,9 @@ async fn run_agent_loop(
     }];
     conversation.extend(history);
 
-    let last_is_user = conversation.last().map_or(false, |m| {
-        m.role == "user" && m.content.as_deref() == Some(user_message)
-    });
+    let last_is_user = conversation
+        .last()
+        .is_some_and(|m| m.role == "user" && m.content.as_deref() == Some(user_message));
     if !last_is_user {
         conversation.push(LLMMessage {
             role: "user".to_string(),
@@ -267,8 +538,8 @@ async fn run_agent_loop(
     }
 
     let loop_start = Instant::now();
-    let max_iterations = 20;
-    let mut verification_rounds: u32 = 0;
+    let max_iterations: usize = 20;
+
     for iteration in 0..max_iterations {
         if cancel_flag.load(Ordering::SeqCst) {
             return Err(anyhow::anyhow!("Generation stopped by user"));
@@ -288,46 +559,120 @@ async fn run_agent_loop(
         }
 
         let tools = if use_tools {
-            Some(tool_definitions())
+            let mut t = tool_definitions();
+            if has_explore {
+                t.push(explore_tool_definition());
+            }
+            if iteration == 0 {
+                let names: Vec<&str> = t.iter().map(|td| td.function.name.as_str()).collect();
+                info!(session_id, ?names, has_explore, "Tools sent to LLM");
+            }
+            Some(t)
         } else {
             None
         };
 
-        let model_ref = session_model.as_deref();
+        let early_dispatched: Arc<std::sync::Mutex<std::collections::HashSet<String>>> =
+            Arc::new(std::sync::Mutex::new(std::collections::HashSet::new()));
+        let early_notified: Arc<std::sync::Mutex<std::collections::HashSet<String>>> =
+            Arc::new(std::sync::Mutex::new(std::collections::HashSet::new()));
+
+        let early_notify: Option<crate::streaming::EarlyDispatchFn<'_>> = if use_tools {
+            let conn = &state.conn;
+            let mid = assistant_msg_id.clone();
+            let sid = session_id.to_string();
+            let aid = agent_info.as_ref().map(|a| a.id.clone()).unwrap_or_default();
+            let notified = early_notified.clone();
+            Some(Box::new(move |tc: &ToolCall| {
+                if tc.function.name == EXPLORE_TOOL_NAME || is_wait_tool_call(tc) {
+                    return;
+                }
+                if conn
+                    .reducers
+                    .create_tool_command(
+                        tc.id.clone(),
+                        mid.clone(),
+                        sid.clone(),
+                        aid.clone(),
+                        tc.function.name.clone(),
+                        String::new(),
+                        "generating".to_string(),
+                    )
+                    .is_ok()
+                {
+                    notified.lock().unwrap().insert(tc.id.clone());
+                }
+            }))
+        } else {
+            None
+        };
+
+        let early_dispatch: Option<crate::streaming::EarlyDispatchFn<'_>> = if use_tools {
+            let conn = &state.conn;
+            let mid = assistant_msg_id.clone();
+            let sid = session_id.to_string();
+            let aid = agent_info.as_ref().map(|a| a.id.clone()).unwrap_or_default();
+            let notified = early_notified.clone();
+            let dispatched = early_dispatched.clone();
+            Some(Box::new(move |tc: &ToolCall| {
+                if tc.function.name == EXPLORE_TOOL_NAME || is_wait_tool_call(tc) {
+                    return;
+                }
+                let ok = if notified.lock().unwrap().contains(&tc.id) {
+                    conn.reducers
+                        .finalize_tool_command(
+                            tc.id.clone(),
+                            tc.function.arguments.clone(),
+                        )
+                        .is_ok()
+                } else {
+                    conn.reducers
+                        .create_tool_command(
+                            tc.id.clone(),
+                            mid.clone(),
+                            sid.clone(),
+                            aid.clone(),
+                            tc.function.name.clone(),
+                            tc.function.arguments.clone(),
+                            "pending".to_string(),
+                        )
+                        .is_ok()
+                };
+                if ok {
+                    dispatched.lock().unwrap().insert(tc.id.clone());
+                }
+            }))
+        } else {
+            None
+        };
+
         let llm_start = Instant::now();
-        let mut result = stream_llm_response(
+        let result = stream_llm_response(
             state,
             session_id,
             &conversation,
             &assistant_msg_id,
             tools.clone(),
-            model_ref,
+            session_model.as_deref(),
+            early_dispatch,
+            early_notify,
+            false,
+            Some(cancel_flag),
         )
         .await?;
         let llm_ms = llm_start.elapsed().as_millis() as u64;
 
-        if matches!(&result, LLMResult::TextComplete(t, _) if t.trim().is_empty()) {
-            tracing::warn!(session_id, "LLM returned empty text, retrying with nudge");
-            let mut nudged = conversation.clone();
-            nudged.push(LLMMessage {
-                role: "user".to_string(),
-                content: Some("Please respond with a text answer.".to_string()),
-                tool_calls: None,
-                tool_call_id: None,
-            });
-            result = stream_llm_response(
-                state,
-                session_id,
-                &nudged,
-                &assistant_msg_id,
-                tools,
-                model_ref,
-            )
-            .await?;
-        }
+        let model_used = session_model.as_deref().unwrap_or(&state.openrouter_model);
+        info!(
+            session_id,
+            iteration,
+            llm_ms,
+            model = model_used,
+            "LLM response received"
+        );
 
         match result {
-            LLMResult::TextComplete(text, usage) => {
+            LLMResult::TextComplete(_text, usage) => {
                 state
                     .conn
                     .reducers
@@ -336,56 +681,11 @@ async fn run_agent_loop(
 
                 store_token_usage(state, &assistant_msg_id, usage);
 
-                conversation.push(LLMMessage {
-                    role: "assistant".to_string(),
-                    content: Some(text.clone()),
-                    tool_calls: None,
-                    tool_call_id: None,
-                });
-
-                if verification_rounds < MAX_VERIFICATION_ROUNDS && use_tools {
-                    if let Some(verdict) = run_verification(
-                        state,
-                        session_id,
-                        user_message,
-                        &text,
-                        use_tools,
-                    ).await {
-                        let _ = state.conn.reducers.create_verification(
-                            session_id.to_string(),
-                            assistant_msg_id.clone(),
-                            verdict.completed,
-                            verdict.reason.clone(),
-                        );
-
-                        if !verdict.completed {
-                            verification_rounds += 1;
-                            let reason = verdict.reason.unwrap_or_else(|| "Task appears incomplete".to_string());
-                            info!(
-                                session_id,
-                                iteration,
-                                verification_rounds,
-                                reason = %reason,
-                                "Verification failed, continuing agent loop"
-                            );
-                            conversation.push(LLMMessage {
-                                role: "user".to_string(),
-                                content: Some(format!(
-                                    "[Verification check: your response did not fully complete the task. Reason: {reason}. Please continue and finish what was asked.]"
-                                )),
-                                tool_calls: None,
-                                tool_call_id: None,
-                            });
-                            continue;
-                        }
-                    }
-                }
-
                 info!(
                     session_id,
                     iteration,
                     llm_ms,
-                    verification_rounds,
+                    model = model_used,
                     iter_ms = iter_start.elapsed().as_millis() as u64,
                     total_ms = loop_start.elapsed().as_millis() as u64,
                     "Agent loop complete (text)"
@@ -408,26 +708,49 @@ async fn run_agent_loop(
                     tool_call_id: None,
                 });
 
-                if let Err(e) = state.conn.reducers.update_session_status(
-                    session_id.to_string(),
-                    "waiting_for_tool".to_string(),
-                ) {
-                    tracing::warn!(session_id, "Failed to set session to waiting_for_tool: {e}");
+                let (explore_calls, rest): (Vec<&ToolCall>, Vec<&ToolCall>) =
+                    tool_calls.iter().partition(|tc| is_explore_tool_call(tc));
+                let (wait_calls, agent_calls): (Vec<&ToolCall>, Vec<&ToolCall>) =
+                    rest.into_iter().partition(|tc| is_wait_tool_call(tc));
+
+                if !agent_calls.is_empty() {
+                    if let Err(e) = state.conn.reducers.update_session_status(
+                        session_id.to_string(),
+                        "waiting_for_tool".to_string(),
+                    ) {
+                        tracing::warn!(
+                            session_id,
+                            "Failed to set session to waiting_for_tool: {e}"
+                        );
+                    }
                 }
 
-                let agent_id = find_agent_id(state, owner_token).unwrap_or_default();
-                let tools_start = Instant::now();
+                let agent_id =
+                    agent_info.as_ref().map(|a| a.id.clone()).unwrap_or_default();
+                let dispatched_set = early_dispatched.lock().unwrap().clone();
+                let notified_set = early_notified.lock().unwrap().clone();
 
                 if cancel_flag.load(Ordering::SeqCst) {
                     return Err(anyhow::anyhow!("Generation stopped by user"));
                 }
 
-                let futures: Vec<_> = tool_calls
+                for tc in &agent_calls {
+                    if notified_set.contains(&tc.id) && !dispatched_set.contains(&tc.id) {
+                        let _ = state.conn.reducers.finalize_tool_command(
+                            tc.id.clone(),
+                            tc.function.arguments.clone(),
+                        );
+                    }
+                }
+
+                let agent_futures: Vec<_> = agent_calls
                     .iter()
                     .map(|tc| {
                         let session_id = session_id.to_string();
                         let assistant_msg_id = assistant_msg_id.clone();
                         let agent_id = agent_id.clone();
+                        let already_dispatched =
+                            dispatched_set.contains(&tc.id) || notified_set.contains(&tc.id);
                         let tool_start = Instant::now();
                         async move {
                             let result = dispatch_tool_call(
@@ -436,17 +759,62 @@ async fn run_agent_loop(
                                 &assistant_msg_id,
                                 &agent_id,
                                 tc,
+                                already_dispatched,
+                                cancel_flag,
                             )
                             .await;
                             let ms = tool_start.elapsed().as_millis() as u64;
-                            (tc, result, ms)
+                            (*tc, result, ms)
                         }
                     })
                     .collect();
 
-                let results = futures::future::join_all(futures).await;
+                let explore_futures: Vec<_> = explore_calls
+                    .iter()
+                    .map(|tc| {
+                        let query = parse_explore_query(tc)
+                            .unwrap_or_else(|| "explore the codebase".to_string());
+                        let explore_start = Instant::now();
+                        let agent_info_clone = agent_info.clone();
+                        async move {
+                            let result = if let Some(ref info) = agent_info_clone {
+                                match tokio::time::timeout(
+                                    std::time::Duration::from_secs(180),
+                                    run_explore_subagent(state, session_id, &query, info, cancel_flag),
+                                ).await {
+                                    Ok(r) => r,
+                                    Err(_) => Ok("Explore timed out after 3 minutes".to_string()),
+                                }
+                            } else {
+                                Ok("No agent available for exploration".to_string())
+                            };
+                            let ms = explore_start.elapsed().as_millis() as u64;
+                            (*tc, result, ms)
+                        }
+                    })
+                    .collect();
 
-                for (tc, _, ms) in &results {
+                let wait_futures: Vec<_> = wait_calls
+                    .iter()
+                    .map(|tc| {
+                        let session_id = session_id.to_string();
+                        let assistant_msg_id = assistant_msg_id.clone();
+                        let wait_start = Instant::now();
+                        async move {
+                            let result = execute_wait(state, &session_id, &assistant_msg_id, tc, cancel_flag).await;
+                            let ms = wait_start.elapsed().as_millis() as u64;
+                            (*tc, result, ms)
+                        }
+                    })
+                    .collect();
+
+                let (agent_results, explore_results, wait_results) = tokio::join!(
+                    futures::future::join_all(agent_futures),
+                    futures::future::join_all(explore_futures),
+                    futures::future::join_all(wait_futures),
+                );
+
+                for (tc, _, ms) in &agent_results {
                     info!(
                         session_id,
                         iteration,
@@ -456,7 +824,17 @@ async fn run_agent_loop(
                     );
                 }
 
-                for (tc, result, _) in results {
+                for (_tc, _, ms) in &explore_results {
+                    info!(
+                        session_id,
+                        iteration,
+                        tool = "explore",
+                        tool_ms = ms,
+                        "Explore subagent completed"
+                    );
+                }
+
+                for (tc, result, _) in agent_results {
                     let tool_result = result?;
                     conversation.push(LLMMessage {
                         role: "tool".to_string(),
@@ -466,21 +844,54 @@ async fn run_agent_loop(
                     });
                 }
 
+                for (tc, result, _) in explore_results {
+                    let explore_result = result?;
+                    conversation.push(LLMMessage {
+                        role: "tool".to_string(),
+                        content: Some(explore_result),
+                        tool_calls: None,
+                        tool_call_id: Some(tc.id.clone()),
+                    });
+                }
+
+                for (tc, result, ms) in wait_results {
+                    info!(
+                        session_id,
+                        iteration,
+                        tool = "wait",
+                        tool_ms = ms,
+                        "Wait completed"
+                    );
+                    let wait_result = result?;
+                    conversation.push(LLMMessage {
+                        role: "tool".to_string(),
+                        content: Some(wait_result),
+                        tool_calls: None,
+                        tool_call_id: Some(tc.id.clone()),
+                    });
+                }
+
                 info!(
                     session_id,
                     iteration,
                     llm_ms,
-                    tools_ms = tools_start.elapsed().as_millis() as u64,
                     tool_count = tool_calls.len(),
+                    explore_count = explore_calls.len(),
+                    model = model_used,
                     iter_ms = iter_start.elapsed().as_millis() as u64,
                     "Iteration complete (tool calls)"
                 );
 
-                if let Err(e) = state.conn.reducers.update_session_status(
-                    session_id.to_string(),
-                    "streaming".to_string(),
-                ) {
-                    tracing::warn!(session_id, "Failed to set session back to streaming: {e}");
+                if !agent_calls.is_empty() {
+                    if let Err(e) = state.conn.reducers.update_session_status(
+                        session_id.to_string(),
+                        "streaming".to_string(),
+                    ) {
+                        tracing::warn!(
+                            session_id,
+                            "Failed to set session back to streaming: {e}"
+                        );
+                    }
                 }
             }
             LLMResult::Error(e) => {
@@ -496,7 +907,7 @@ async fn run_agent_loop(
         }
 
         if iteration == max_iterations - 1 {
-            tracing::warn!("Hit max iterations for session {session_id}");
+            tracing::warn!(session_id, iteration, "Hit max iterations");
         }
     }
 
@@ -510,132 +921,24 @@ async fn run_agent_loop(
     Ok(())
 }
 
-#[derive(serde::Deserialize)]
-struct VerificationResponse {
-    completed: bool,
-    #[serde(default)]
-    reason: Option<String>,
-}
+use crate::state::{FunctionDefinition, ToolDefinition};
 
-#[derive(serde::Deserialize)]
-struct ChatCompletion {
-    choices: Vec<ChatChoice>,
-}
-
-#[derive(serde::Deserialize)]
-struct ChatChoice {
-    message: ChatChoiceMessage,
-}
-
-#[derive(serde::Deserialize)]
-struct ChatChoiceMessage {
-    content: Option<String>,
-}
-
-async fn run_verification(
-    state: &AppState,
-    session_id: &str,
-    user_message: &str,
-    assistant_response: &str,
-    use_tools: bool,
-) -> Option<VerificationResponse> {
-    let verification_start = Instant::now();
-
-    let prompt = format!(
-        "You are a task completion verifier. Your job is to check whether the assistant fully completed the user's request.\n\
-        \n\
-        RULES:\n\
-        1. If the user asked a question and got a clear answer, that's COMPLETED.\n\
-        2. If the user asked for code changes or actions, check that the assistant actually did them (not just described what to do).\n\
-        3. If the assistant said it will do something but hasn't done it yet, that's NOT completed.\n\
-        4. If the assistant asked a clarifying question, that's COMPLETED (it's the right move).\n\
-        5. Simple greetings, acknowledgments, or casual conversation are always COMPLETED.\n\
-        {tools_note}\
-        \n\
-        Respond with ONLY valid JSON, no markdown, no explanation:\n\
-        {{\"completed\": true}} or {{\"completed\": false, \"reason\": \"brief explanation of what's missing\"}}\n\
-        \n\
-        USER REQUEST:\n{user_message}\n\
-        \n\
-        ASSISTANT RESPONSE:\n{assistant_response}",
-        tools_note = if use_tools {
-            "6. If the user asked for file operations or code changes and the assistant used tools to do them, that's COMPLETED.\n\
-             7. If the assistant only talked about what it would do without actually calling tools, that's NOT completed.\n"
-        } else {
-            ""
-        }
-    );
-
-    let body = LLMRequest {
-        model: VERIFICATION_MODEL.to_string(),
-        stream: false,
-        messages: vec![LLMMessage {
-            role: "user".to_string(),
-            content: Some(prompt),
-            tool_calls: None,
-            tool_call_id: None,
-        }],
-        tools: None,
-        temperature: 0.0,
-        max_tokens: 200,
-        provider: Some(ProviderPreferences {
-            order: None,
-            ignore: None,
-            allow_fallbacks: Some(true),
-            require_parameters: None,
-            sort: None,
-        }),
-    };
-
-    let response = match state
-        .http
-        .post("https://openrouter.ai/api/v1/chat/completions")
-        .timeout(std::time::Duration::from_secs(15))
-        .header("Authorization", format!("Bearer {}", state.openrouter_key))
-        .header("HTTP-Referer", "https://code.stoff.dev")
-        .header("X-Title", "Relay")
-        .json(&body)
-        .send()
-        .await
-    {
-        Ok(r) if r.status().is_success() => r,
-        Ok(r) => {
-            tracing::warn!(session_id, status = %r.status(), "Verification LLM request failed");
-            return None;
-        }
-        Err(e) => {
-            tracing::warn!(session_id, "Verification request error: {e}");
-            return None;
-        }
-    };
-
-    let completion: ChatCompletion = match response.json().await {
-        Ok(c) => c,
-        Err(e) => {
-            tracing::warn!(session_id, "Failed to parse verification response: {e}");
-            return None;
-        }
-    };
-
-    let content = completion.choices.first()?.message.content.as_ref()?;
-
-    let cleaned = content.trim().trim_start_matches("```json").trim_start_matches("```").trim_end_matches("```").trim();
-
-    let result: VerificationResponse = match serde_json::from_str(cleaned) {
-        Ok(v) => v,
-        Err(e) => {
-            tracing::warn!(session_id, raw = %content, "Failed to parse verification JSON: {e}");
-            return None;
-        }
-    };
-
-    info!(
-        session_id,
-        completed = result.completed,
-        reason = result.reason.as_deref().unwrap_or(""),
-        ms = verification_start.elapsed().as_millis() as u64,
-        "Verification complete"
-    );
-
-    Some(result)
+fn explore_tool_definition() -> ToolDefinition {
+    ToolDefinition {
+        tool_type: "function".to_string(),
+        function: FunctionDefinition {
+            name: EXPLORE_TOOL_NAME.to_string(),
+            description: "Search and analyze the codebase in a single call. This tool reads multiple files, follows references across files, and returns a comprehensive report. Use this instead of making sequential file_read or grep calls when you need to understand code flow, trace function calls across files, compare implementations, or gather information from multiple locations. Returns in one round trip what would otherwise take many sequential tool calls.".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Describe what you need to find or understand. Examples: 'trace how chat messages flow from the HTTP handler through to the LLM call, show the function chain with file paths', 'find all environment variables read by the server and their default values', 'compare the tool definitions in tools.rs with the tool implementations in apps/agent/src/tools/'"
+                    }
+                },
+                "required": ["query"]
+            }),
+        },
+    }
 }

@@ -16,6 +16,7 @@ export const Agent = __t.object("Agent", {
   userId: __t.identity(),
   ownerToken: __t.string(),
   workdir: __t.string(),
+  workspaceTree: __t.string(),
   status: __t.string(),
   lastHeartbeat: __t.timestamp(),
   createdAt: __t.timestamp(),

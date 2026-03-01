@@ -4,7 +4,7 @@
 #
 
 app = 'server-silent-darkness-2099'
-primary_region = 'fra'
+primary_region = 'iad'
 
 [build]
 

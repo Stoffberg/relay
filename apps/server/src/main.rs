@@ -11,10 +11,7 @@ use anyhow::Result;
 use axum::{
     extract::{DefaultBodyLimit, State, rejection::JsonRejection},
     http::{HeaderMap, HeaderValue, StatusCode},
-    response::{
-        sse::{Event, KeepAlive, Sse},
-        IntoResponse, Response,
-    },
+    response::IntoResponse,
     routing::post,
     Json, Router,
 };
@@ -26,10 +23,10 @@ use module_bindings::message_table::MessageTableAccess;
 use module_bindings::send_message_reducer::send_message;
 use module_bindings::session_table::SessionTableAccess;
 use module_bindings::tool_command_table::ToolCommandTableAccess;
-use module_bindings::tool_result_table::ToolResultTableAccess;
 use module_bindings::update_session_title_reducer::update_session_title;
+use module_bindings::update_tool_command_status_reducer::update_tool_command_status;
 use module_bindings::DbConnection;
-use futures::StreamExt;
+
 use spacetimedb_sdk::{DbContext, Table, TableWithPrimaryKey};
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -43,6 +40,7 @@ use module_bindings::complete_message_reducer::complete_message;
 use module_bindings::delete_message_reducer::delete_message;
 use module_bindings::reap_stale_agents_reducer::reap_stale_agents;
 use module_bindings::update_message_content_reducer::update_message_content;
+use module_bindings::update_session_model_reducer::update_session_model;
 use module_bindings::update_session_status_reducer::update_session_status;
 use state::{
     AppState, ChatRequest, ChatResponse, EditRequest, QueuedMessage, RegenerateRequest,
@@ -178,7 +176,7 @@ async fn main() -> Result<()> {
 
     let now_secs = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
+        .unwrap_or_default()
         .as_secs();
 
     let llm_temperature: f32 = std::env::var("OPENROUTER_TEMPERATURE")
@@ -191,11 +189,13 @@ async fn main() -> Result<()> {
         .unwrap_or(4096);
 
     let fallback_model = std::env::var("OPENROUTER_FALLBACK_MODEL").ok();
+    let exploration_model = std::env::var("OPENROUTER_EXPLORATION_MODEL").ok();
 
     let state = Arc::new(AppState {
         openrouter_key: std::env::var("OPENROUTER_API_KEY").expect("OPENROUTER_API_KEY required"),
         openrouter_model: std::env::var("OPENROUTER_MODEL")
             .unwrap_or_else(|_| "minimax/minimax-m2.5:nitro".to_string()),
+        exploration_model,
         fallback_model,
         api_key: std::env::var("RELAY_API_KEY").expect("RELAY_API_KEY required"),
         service_key: std::env::var("SERVICE_KEY").ok(),
@@ -270,6 +270,7 @@ async fn main() -> Result<()> {
                     id: msg.id.clone(),
                     content,
                     owner_token: owner_token.clone(),
+                    model: None,
                 });
             }
         }
@@ -290,7 +291,6 @@ async fn main() -> Result<()> {
         .route("/health", axum::routing::get(health))
         .route("/chat", post(chat_handler))
         .route("/stop", post(stop_handler))
-        .route("/chat/stream", post(chat_stream_handler))
         .route("/regenerate", post(regenerate_handler))
         .route("/edit", post(edit_handler))
         .route("/service/echo", post(service_echo_handler))
@@ -335,10 +335,53 @@ async fn main() -> Result<()> {
         info!("Agent reaper started (every 60s, stale after 90s)");
     }
 
+    {
+        let monitor_state = state.clone();
+        tokio::spawn(async move {
+            const CHECK_INTERVAL_SECS: u64 = 5;
+            const MAX_DISCONNECT_SECS: u64 = 60;
+            let mut disconnected_since: Option<std::time::Instant> = None;
+
+            loop {
+                tokio::time::sleep(std::time::Duration::from_secs(CHECK_INTERVAL_SECS)).await;
+                let connected = monitor_state.db_connected.load(Ordering::SeqCst);
+
+                if connected {
+                    if disconnected_since.is_some() {
+                        info!("SpacetimeDB connection restored");
+                        disconnected_since = None;
+                    }
+                    continue;
+                }
+
+                let since = *disconnected_since.get_or_insert_with(std::time::Instant::now);
+                let elapsed = since.elapsed().as_secs();
+
+                if elapsed > 0 && elapsed.is_multiple_of(15) {
+                    tracing::warn!(
+                        "SpacetimeDB disconnected for {}s (will exit at {}s)",
+                        elapsed,
+                        MAX_DISCONNECT_SECS,
+                    );
+                }
+
+                if elapsed >= MAX_DISCONNECT_SECS {
+                    tracing::error!(
+                        "SpacetimeDB disconnected for {}s, exiting for restart",
+                        elapsed,
+                    );
+                    std::process::exit(1);
+                }
+            }
+        });
+        info!("DB connection monitor started (exit after 60s disconnect)");
+    }
+
+    let shutdown_state = state.clone();
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await?;
     info!("Server listening on 0.0.0.0:3000");
     axum::serve(listener, app)
-        .with_graceful_shutdown(async {
+        .with_graceful_shutdown(async move {
             let ctrl_c = tokio::signal::ctrl_c();
             let mut sigterm = tokio::signal::unix::signal(
                 tokio::signal::unix::SignalKind::terminate(),
@@ -347,7 +390,37 @@ async fn main() -> Result<()> {
                 _ = ctrl_c => {},
                 _ = sigterm.recv() => {},
             }
-            info!("Received shutdown signal, draining connections...");
+            info!("Received shutdown signal, draining active sessions...");
+
+            {
+                let tokens = shutdown_state.cancel_tokens.lock().unwrap();
+                let count = tokens.len();
+                for (sid, token) in tokens.iter() {
+                    token.store(true, Ordering::SeqCst);
+                    info!("Cancelled session {sid} for shutdown");
+                }
+                if count > 0 {
+                    info!("Cancelled {count} active session(s)");
+                }
+            }
+
+            {
+                shutdown_state.active_sessions.lock().unwrap().clear();
+            }
+
+            let drain_deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+            loop {
+                let remaining = shutdown_state.cancel_tokens.lock().unwrap().len();
+                if remaining == 0 {
+                    info!("All sessions drained");
+                    break;
+                }
+                if std::time::Instant::now() >= drain_deadline {
+                    info!("{remaining} session(s) still active after drain timeout, proceeding with shutdown");
+                    break;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+            }
         })
         .await?;
 
@@ -392,295 +465,57 @@ async fn stop_handler(
 
     if cancelled {
         info!("Stop requested for session {session_id}");
-        (StatusCode::OK, Json(serde_json::json!({ "stopped": true })))
     } else {
-        (StatusCode::OK, Json(serde_json::json!({ "stopped": false, "reason": "no active generation" })))
+        info!("Stop requested for session {session_id} (no active loop, forcing cleanup)");
+        force_session_cleanup(&state, &session_id);
+    }
+
+    (StatusCode::OK, Json(serde_json::json!({ "stopped": true })))
+}
+
+fn require_db_connected(state: &AppState) -> Result<(), (StatusCode, Json<serde_json::Value>)> {
+    if !state.db_connected.load(Ordering::SeqCst) {
+        Err((
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({ "error": "Database connection unavailable. Please retry shortly." })),
+        ))
+    } else {
+        Ok(())
     }
 }
 
-async fn chat_stream_handler(
-    State(state): State<Arc<AppState>>,
-    headers: HeaderMap,
-    payload: Result<Json<ChatRequest>, JsonRejection>,
-) -> Response {
-    let Json(payload) = match payload {
-        Ok(p) => p,
-        Err(_) => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(serde_json::json!({ "error": "Invalid request body" })),
-            )
-                .into_response();
-        }
-    };
-
-    if let Some(token) = headers
-        .get("authorization")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.strip_prefix("Bearer "))
-    {
-        let a = token.as_bytes();
-        let b = state.api_key.as_bytes();
-        let valid =
-            a.len() == b.len() && a.iter().zip(b.iter()).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0;
-        if !valid {
-            return (
-                StatusCode::UNAUTHORIZED,
-                Json(serde_json::json!({ "error": "Invalid API key" })),
-            )
-                .into_response();
+fn force_session_cleanup(state: &AppState, session_id: &str) {
+    for msg in state.conn.db.message().iter() {
+        if msg.session_id == session_id && msg.status == "streaming" {
+            let _ = state.conn.reducers.complete_message(msg.id.clone());
         }
     }
-
-    if payload.message.trim().is_empty() {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({ "error": "Message cannot be empty" })),
-        )
-            .into_response();
+    for cmd in state.conn.db.tool_command().iter() {
+        if cmd.session_id == session_id
+            && (cmd.status == "pending" || cmd.status == "executing" || cmd.status == "generating")
+        {
+            let _ = state
+                .conn
+                .reducers
+                .update_tool_command_status(cmd.id, "error".to_string());
+        }
     }
-
-    let session_id = payload.session_id.clone();
-    let user_msg_id = payload
-        .user_message_id
-        .clone()
-        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-    let owner_token = payload.owner_token.clone();
-
-    if let Err(e) = state.conn.reducers.create_session(session_id.clone(), owner_token.clone()) {
-        tracing::warn!("Session create (may already exist): {e}");
-    }
-
-    if let Err(e) = state.conn.reducers.send_message(
-        user_msg_id.clone(),
-        session_id.clone(),
-        "user".to_string(),
-        "queued".to_string(),
-    ) {
-        tracing::error!("send_message reducer failed: {e}");
-        return (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({ "error": "Failed to send message" })),
-        )
-            .into_response();
-    }
-
     if let Err(e) = state
         .conn
         .reducers
-        .append_message_part(user_msg_id.clone(), 0u32, payload.message.clone())
+        .update_session_status(session_id.to_string(), "idle".to_string())
     {
-        tracing::warn!("Failed to store user message content: {e}");
+        tracing::warn!("force_session_cleanup: failed to set session {session_id} to idle: {e}");
     }
-
-    let is_first_message = {
-        let messages: Vec<_> = state
-            .conn
-            .db
-            .message()
-            .iter()
-            .filter(|m| m.session_id == session_id)
-            .collect();
-        messages.len() <= 1
-    };
-
-    if is_first_message {
-        let title = if payload.message.chars().count() > 80 {
-            format!(
-                "{}...",
-                payload.message.chars().take(77).collect::<String>()
-            )
-        } else {
-            payload.message.clone()
-        };
-        let _ = state
-            .conn
-            .reducers
-            .update_session_title(session_id.clone(), title);
-    }
-
-    let queued_msg = QueuedMessage {
-        id: user_msg_id.clone(),
-        content: payload.message.clone(),
-        owner_token: owner_token.clone(),
-    };
-
-    let mut active = state.active_sessions.lock().unwrap();
-    if let Some(tx) = active.get(&session_id) {
-        if let Err(e) = tx.try_send(queued_msg) {
-            tracing::error!(session_id, "Failed to queue message: {e}");
-        }
-    } else {
-        let (tx, rx) = tokio::sync::mpsc::channel::<QueuedMessage>(16);
-        let _ = tx.try_send(queued_msg);
-        active.insert(session_id.clone(), tx);
-        drop(active);
-
-        let state_clone = state.clone();
-        let session_clone = session_id.clone();
-        tokio::spawn(async move {
-            agent_loop::run_session_queue(&state_clone, &session_clone, rx).await;
-        });
-    }
-
-    let stream = futures::stream::unfold(
-        StreamState {
-            state: state.clone(),
-            session_id: session_id.clone(),
-            seen_parts: 0,
-            seen_tool_commands: std::collections::HashSet::new(),
-            done: false,
-        },
-        |mut ss| async move {
-            if ss.done {
-                return None;
-            }
-
-            loop {
-                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-
-                let mut events: Vec<Event> = Vec::new();
-
-                let assistant_msgs: Vec<_> = ss
-                    .state
-                    .conn
-                    .db
-                    .message()
-                    .iter()
-                    .filter(|m| {
-                        m.session_id == ss.session_id
-                            && m.role == "assistant"
-                            && (m.status == "streaming" || m.status == "complete")
-                    })
-                    .collect();
-
-                if let Some(latest_assistant) = assistant_msgs
-                    .iter()
-                    .max_by_key(|m| m.created_at)
-                {
-                    let mut parts: Vec<_> = ss
-                        .state
-                        .conn
-                        .db
-                        .message_part()
-                        .iter()
-                        .filter(|p| p.message_id == latest_assistant.id)
-                        .collect();
-                    parts.sort_by_key(|p| p.part_index);
-
-                    if parts.len() > ss.seen_parts {
-                        for part in &parts[ss.seen_parts..] {
-                            events.push(
-                                Event::default().data(
-                                    serde_json::json!({"type": "text", "content": part.content})
-                                        .to_string(),
-                                ),
-                            );
-                        }
-                        ss.seen_parts = parts.len();
-                    }
-
-                    let tool_cmds: Vec<_> = ss
-                        .state
-                        .conn
-                        .db
-                        .tool_command()
-                        .iter()
-                        .filter(|c| c.session_id == ss.session_id)
-                        .collect();
-                    for cmd in &tool_cmds {
-                        if !ss.seen_tool_commands.contains(&cmd.id) {
-                            if cmd.status == "completed" || cmd.status == "error" {
-                                let result: Option<_> = ss
-                                    .state
-                                    .conn
-                                    .db
-                                    .tool_result()
-                                    .iter()
-                                    .find(|r| r.tool_command_id == cmd.id);
-                                events.push(
-                                    Event::default().data(
-                                        serde_json::json!({
-                                            "type": "tool",
-                                            "tool_name": cmd.tool_name,
-                                            "status": cmd.status,
-                                            "output": result.as_ref().map(|r| &r.output),
-                                            "error": result.as_ref().and_then(|r| r.error.as_ref()),
-                                        })
-                                        .to_string(),
-                                    ),
-                                );
-                                ss.seen_tool_commands.insert(cmd.id);
-                            }
-                        }
-                    }
-
-                    if latest_assistant.status == "complete" {
-                        let session = ss
-                            .state
-                            .conn
-                            .db
-                            .session()
-                            .id()
-                            .find(&ss.session_id);
-                        if session.map_or(true, |s| s.status == "idle") {
-                            events.push(
-                                Event::default().data(
-                                    serde_json::json!({
-                                        "type": "done",
-                                        "message_id": latest_assistant.id,
-                                    })
-                                    .to_string(),
-                                ),
-                            );
-                            ss.done = true;
-                        }
-                    }
-                }
-
-                let session = ss
-                    .state
-                    .conn
-                    .db
-                    .session()
-                    .id()
-                    .find(&ss.session_id);
-                if session.map_or(false, |s| s.status == "error") {
-                    events.push(
-                        Event::default()
-                            .data(serde_json::json!({"type": "error", "message": "Session error"}).to_string()),
-                    );
-                    ss.done = true;
-                }
-
-                if !events.is_empty() {
-                    let combined: Vec<_> = events
-                        .into_iter()
-                        .map(|e| Ok::<_, std::convert::Infallible>(e))
-                        .collect();
-                    return Some((futures::stream::iter(combined), ss));
-                }
-            }
-        },
-    );
-
-    Sse::new(stream.flat_map(|s| s))
-        .keep_alive(KeepAlive::default())
-        .into_response()
-}
-
-struct StreamState {
-    state: Arc<AppState>,
-    session_id: String,
-    seen_parts: usize,
-    seen_tool_commands: HashSet<u64>,
-    done: bool,
 }
 
 async fn regenerate_handler(
     State(state): State<Arc<AppState>>,
     Json(payload): Json<RegenerateRequest>,
 ) -> impl IntoResponse {
+    if let Err(resp) = require_db_connected(&state) {
+        return resp;
+    }
     let session_id = payload.session_id;
     let assistant_msg_id = payload.message_id;
 
@@ -791,16 +626,27 @@ async fn regenerate_handler(
         id: new_msg_id.clone(),
         content: user_content,
         owner_token,
+        model: None,
     };
 
     let mut active = state.active_sessions.lock().unwrap();
     if let Some(tx) = active.get(&session_id) {
         if let Err(e) = tx.try_send(queued_msg) {
-            tracing::error!(session_id, "Failed to queue regenerate message: {e}");
+            tracing::error!(session_id, "Failed to queue message: {e}");
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(serde_json::json!({ "error": "Message queue full, try again" })),
+            );
         }
     } else {
         let (tx, rx) = tokio::sync::mpsc::channel::<QueuedMessage>(16);
-        let _ = tx.try_send(queued_msg);
+        if let Err(e) = tx.try_send(queued_msg) {
+            tracing::error!(session_id, "Failed to send initial message: {e}");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": "Failed to initialize session queue" })),
+            );
+        }
         active.insert(session_id.clone(), tx);
         drop(active);
 
@@ -824,6 +670,9 @@ async fn edit_handler(
     State(state): State<Arc<AppState>>,
     Json(payload): Json<EditRequest>,
 ) -> impl IntoResponse {
+    if let Err(resp) = require_db_connected(&state) {
+        return resp;
+    }
     let session_id = payload.session_id;
     let message_id = payload.message_id;
     let new_content = payload.content;
@@ -920,16 +769,27 @@ async fn edit_handler(
         id: new_msg_id.clone(),
         content: new_content,
         owner_token,
+        model: None,
     };
 
     let mut active = state.active_sessions.lock().unwrap();
     if let Some(tx) = active.get(&session_id) {
         if let Err(e) = tx.try_send(queued_msg) {
             tracing::error!(session_id, "Failed to queue edit message: {e}");
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(serde_json::json!({ "error": "Message queue full, try again" })),
+            );
         }
     } else {
         let (tx, rx) = tokio::sync::mpsc::channel::<QueuedMessage>(16);
-        let _ = tx.try_send(queued_msg);
+        if let Err(e) = tx.try_send(queued_msg) {
+            tracing::error!(session_id, "Failed to send initial message: {e}");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": "Failed to initialize session queue" })),
+            );
+        }
         active.insert(session_id.clone(), tx);
         drop(active);
 
@@ -1073,6 +933,9 @@ async fn chat_handler(
     headers: HeaderMap,
     payload: Result<Json<ChatRequest>, JsonRejection>,
 ) -> impl IntoResponse {
+    if let Err(resp) = require_db_connected(&state) {
+        return resp;
+    }
     let Json(payload) = match payload {
         Ok(p) => p,
         Err(_) => {
@@ -1104,7 +967,7 @@ async fn chat_handler(
 
     let now_secs = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
+        .unwrap_or_default()
         .as_secs();
     let old_start = state.global_window_start.load(Ordering::SeqCst);
     if now_secs.saturating_sub(old_start) >= 60 {
@@ -1236,22 +1099,40 @@ async fn chat_handler(
             .conn
             .reducers
             .update_session_title(session_id.clone(), title);
+
+        if let Some(ref model) = payload.model {
+            let _ = state
+                .conn
+                .reducers
+                .update_session_model(session_id.clone(), Some(model.clone()));
+        }
     }
 
     let queued_msg = QueuedMessage {
         id: user_msg_id.clone(),
         content: payload.message.clone(),
         owner_token: payload.owner_token.clone(),
+        model: payload.model.clone(),
     };
 
     let mut active = state.active_sessions.lock().unwrap();
     if let Some(tx) = active.get(&session_id) {
         if let Err(e) = tx.try_send(queued_msg) {
             tracing::error!(session_id, "Failed to queue message: {e}");
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(serde_json::json!({ "error": "Message queue full, try again" })),
+            );
         }
     } else {
         let (tx, rx) = tokio::sync::mpsc::channel::<QueuedMessage>(16);
-        let _ = tx.try_send(queued_msg);
+        if let Err(e) = tx.try_send(queued_msg) {
+            tracing::error!(session_id, "Failed to send initial message: {e}");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": "Failed to initialize session queue" })),
+            );
+        }
         active.insert(session_id.clone(), tx);
         drop(active);
 

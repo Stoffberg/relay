@@ -8,6 +8,7 @@ use crate::module_bindings::DbConnection;
 pub struct AppState {
     pub openrouter_key: String,
     pub openrouter_model: String,
+    pub exploration_model: Option<String>,
     pub fallback_model: Option<String>,
     pub api_key: String,
     pub service_key: Option<String>,
@@ -31,6 +32,7 @@ pub struct QueuedMessage {
     pub id: String,
     pub content: String,
     pub owner_token: String,
+    pub model: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -39,6 +41,7 @@ pub struct ChatRequest {
     pub session_id: String,
     pub user_message_id: Option<String>,
     pub owner_token: String,
+    pub model: Option<String>,
 }
 
 #[derive(Serialize)]

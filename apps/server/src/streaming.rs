@@ -1,5 +1,6 @@
 use anyhow::Result;
 use futures::StreamExt;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
 use crate::module_bindings::append_message_part_reducer::append_message_part;
@@ -66,17 +67,14 @@ pub async fn send_llm_request(
     });
 
     let fut_a = fire_llm_request(state, &body_a);
-    let fut_b = async {
-        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-        fire_llm_request(state, &body_b).await
-    };
+    let fut_b = fire_llm_request(state, &body_b);
 
     tokio::pin!(fut_a);
     tokio::pin!(fut_b);
 
     let mut a_done = false;
     let mut b_done = false;
-    let mut last_error: Option<(u16, String)> = None;
+    let mut last_error: Option<(u16, String)>;
 
     loop {
         tokio::select! {
@@ -118,13 +116,20 @@ pub async fn send_llm_request(
     }
 }
 
-pub async fn stream_llm_response(
-    state: &AppState,
+pub type EarlyDispatchFn<'a> = Box<dyn Fn(&ToolCall) + Send + Sync + 'a>;
+
+#[allow(clippy::too_many_arguments)]
+pub async fn stream_llm_response<'a>(
+    state: &'a AppState,
     session_id: &str,
     messages: &[LLMMessage],
     assistant_msg_id: &str,
     tools: Option<Vec<ToolDefinition>>,
     model_override: Option<&str>,
+    early_dispatch: Option<EarlyDispatchFn<'a>>,
+    early_notify: Option<EarlyDispatchFn<'a>>,
+    suppress_text: bool,
+    cancel_flag: Option<&AtomicBool>,
 ) -> Result<LLMResult> {
     let body = LLMRequest {
         model: model_override
@@ -146,7 +151,7 @@ pub async fn stream_llm_response(
                 if is_transient {
                     tracing::warn!(
                         session_id,
-                        primary = %state.openrouter_model,
+                        primary = %body.model,
                         fallback = %fallback,
                         "Primary model failed with {code}, falling back"
                     );
@@ -174,9 +179,11 @@ pub async fn stream_llm_response(
 
     let mut stream = res.bytes_stream();
     let mut part_index: u32 = 0;
-    let mut line_buffer = String::new();
+    let mut byte_buffer: Vec<u8> = Vec::new();
     let mut full_text = String::new();
     let mut tool_calls: Vec<ToolCall> = Vec::new();
+    let mut dispatched: Vec<bool> = Vec::new();
+    let mut notified: Vec<bool> = Vec::new();
     let mut finish_reason: Option<String> = None;
     let mut usage: Option<TokenUsage> = None;
     let stream_timeout = std::time::Duration::from_secs(60);
@@ -185,6 +192,13 @@ pub async fn stream_llm_response(
     let mut chunk_count: u32 = 0;
 
     loop {
+        if let Some(flag) = cancel_flag {
+            if flag.load(Ordering::SeqCst) {
+                tracing::info!(session_id, "Stream cancelled by user");
+                return Ok(LLMResult::TextComplete(full_text, usage));
+            }
+        }
+
         let maybe_chunk = tokio::time::timeout(stream_timeout, stream.next()).await;
 
         let chunk = match maybe_chunk {
@@ -197,12 +211,12 @@ pub async fn stream_llm_response(
         };
         chunk_count += 1;
 
-        let text = String::from_utf8_lossy(&chunk);
-        line_buffer.push_str(&text);
+        byte_buffer.extend_from_slice(&chunk);
 
-        while let Some(newline_pos) = line_buffer.find('\n') {
-            let line = line_buffer[..newline_pos].trim().to_string();
-            line_buffer = line_buffer[newline_pos + 1..].to_string();
+        while let Some(newline_pos) = byte_buffer.iter().position(|&b| b == b'\n') {
+            let line_bytes = byte_buffer[..newline_pos].to_vec();
+            byte_buffer = byte_buffer[newline_pos + 1..].to_vec();
+            let line = String::from_utf8_lossy(&line_bytes).trim().to_string();
 
             if line.is_empty() || !line.starts_with("data: ") {
                 continue;
@@ -241,14 +255,16 @@ pub async fn stream_llm_response(
                                 first_token_ms = Some(stream_start.elapsed().as_millis() as u64);
                             }
                             full_text.push_str(content);
-                            if let Err(e) = state.conn.reducers.append_message_part(
-                                assistant_msg_id.to_string(),
-                                part_index,
-                                content.clone(),
-                            ) {
-                                tracing::warn!("Failed to append part {part_index}: {e}");
+                            if !suppress_text {
+                                if let Err(e) = state.conn.reducers.append_message_part(
+                                    assistant_msg_id.to_string(),
+                                    part_index,
+                                    content.clone(),
+                                ) {
+                                    tracing::warn!("Failed to append part {part_index}: {e}");
+                                }
+                                part_index += 1;
                             }
-                            part_index += 1;
                         }
                     }
 
@@ -269,6 +285,8 @@ pub async fn stream_llm_response(
                                         arguments: String::new(),
                                     },
                                 });
+                                dispatched.push(false);
+                                notified.push(false);
                             }
                             if let Some(id) = &tc_delta.id {
                                 tool_calls[idx].id = id.clone();
@@ -279,6 +297,27 @@ pub async fn stream_llm_response(
                                 }
                                 if let Some(args) = &func.arguments {
                                     tool_calls[idx].function.arguments.push_str(args);
+                                }
+                            }
+
+                            if let Some(notify) = &early_notify {
+                                if !notified[idx]
+                                    && !tool_calls[idx].id.is_empty()
+                                    && !tool_calls[idx].function.name.is_empty()
+                                {
+                                    notified[idx] = true;
+                                    notify(&tool_calls[idx]);
+                                }
+                            }
+
+                            if let Some(dispatch) = &early_dispatch {
+                                if !dispatched[idx]
+                                    && !tool_calls[idx].id.is_empty()
+                                    && !tool_calls[idx].function.name.is_empty()
+                                    && serde_json::from_str::<serde_json::Value>(&tool_calls[idx].function.arguments).is_ok()
+                                {
+                                    dispatched[idx] = true;
+                                    dispatch(&tool_calls[idx]);
                                 }
                             }
                         }
@@ -307,6 +346,11 @@ pub async fn stream_llm_response(
     if !tool_calls.is_empty() {
         if finish_reason.as_deref() != Some("tool_calls") {
             tracing::warn!(session_id, finish_reason = ?finish_reason, "Tool calls present but finish_reason is not 'tool_calls'");
+        }
+        for tc in &mut tool_calls {
+            if tc.function.arguments.is_empty() {
+                tc.function.arguments = "{}".to_string();
+            }
         }
         let valid = tool_calls.iter().all(|tc| {
             serde_json::from_str::<serde_json::Value>(&tc.function.arguments).is_ok()

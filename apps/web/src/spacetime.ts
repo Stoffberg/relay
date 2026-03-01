@@ -11,5 +11,5 @@ export function extractTimestamp(ts: unknown): number {
     return Number((ts as { __timestamp_micros_since_unix_epoch__: bigint }).__timestamp_micros_since_unix_epoch__ / 1000n);
   }
   console.warn("extractTimestamp: unrecognized format", ts);
-  return Date.now();
+  return 0;
 }

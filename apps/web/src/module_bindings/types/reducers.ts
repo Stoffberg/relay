@@ -19,6 +19,7 @@ import CreateVerificationReducer from "../create_verification_reducer";
 import DeleteMessageReducer from "../delete_message_reducer";
 import DeleteSessionReducer from "../delete_session_reducer";
 import FailMessageReducer from "../fail_message_reducer";
+import FinalizeToolCommandReducer from "../finalize_tool_command_reducer";
 import ReapStaleAgentsReducer from "../reap_stale_agents_reducer";
 import RegisterAgentReducer from "../register_agent_reducer";
 import SendMessageReducer from "../send_message_reducer";
@@ -28,6 +29,7 @@ import UpdateSessionModelReducer from "../update_session_model_reducer";
 import UpdateSessionStatusReducer from "../update_session_status_reducer";
 import UpdateSessionSystemPromptReducer from "../update_session_system_prompt_reducer";
 import UpdateSessionTitleReducer from "../update_session_title_reducer";
+import UpdateToolCommandArgsReducer from "../update_tool_command_args_reducer";
 import UpdateToolCommandStatusReducer from "../update_tool_command_status_reducer";
 
 export type AgentDisconnectParams = __Infer<typeof AgentDisconnectReducer>;
@@ -43,6 +45,7 @@ export type CreateVerificationParams = __Infer<typeof CreateVerificationReducer>
 export type DeleteMessageParams = __Infer<typeof DeleteMessageReducer>;
 export type DeleteSessionParams = __Infer<typeof DeleteSessionReducer>;
 export type FailMessageParams = __Infer<typeof FailMessageReducer>;
+export type FinalizeToolCommandParams = __Infer<typeof FinalizeToolCommandReducer>;
 export type ReapStaleAgentsParams = __Infer<typeof ReapStaleAgentsReducer>;
 export type RegisterAgentParams = __Infer<typeof RegisterAgentReducer>;
 export type SendMessageParams = __Infer<typeof SendMessageReducer>;
@@ -52,5 +55,6 @@ export type UpdateSessionModelParams = __Infer<typeof UpdateSessionModelReducer>
 export type UpdateSessionStatusParams = __Infer<typeof UpdateSessionStatusReducer>;
 export type UpdateSessionSystemPromptParams = __Infer<typeof UpdateSessionSystemPromptReducer>;
 export type UpdateSessionTitleParams = __Infer<typeof UpdateSessionTitleReducer>;
+export type UpdateToolCommandArgsParams = __Infer<typeof UpdateToolCommandArgsReducer>;
 export type UpdateToolCommandStatusParams = __Infer<typeof UpdateToolCommandStatusReducer>;
 

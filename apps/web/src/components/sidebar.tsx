@@ -184,13 +184,7 @@ export const Sidebar = memo(function Sidebar({
             </h1>
             <div className="flex items-center gap-3 mt-1.5">
               <ConnectionIndicator state={connState} />
-              {hasOnlineAgent && (
-                <span className="flex items-center gap-1.5">
-                  <span className="w-[5px] h-[5px] rounded-full bg-accent" />
-                  <span className="text-[11px] font-mono text-muted">agent</span>
-                </span>
-              )}
-
+              <SidebarAgentIndicator hasOnlineAgent={hasOnlineAgent} />
             </div>
           </div>
           <div className="flex items-center gap-1.5">
@@ -383,6 +377,107 @@ export const Sidebar = memo(function Sidebar({
     </nav>
   );
 });
+
+function SidebarAgentIndicator({ hasOnlineAgent }: { hasOnlineAgent: boolean }) {
+  const [showPopover, setShowPopover] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!showPopover) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setShowPopover(false);
+    };
+    const keyHandler = (e: KeyboardEvent) => { if (e.key === "Escape") setShowPopover(false); };
+    document.addEventListener("mousedown", handler);
+    document.addEventListener("keydown", keyHandler);
+    return () => {
+      document.removeEventListener("mousedown", handler);
+      document.removeEventListener("keydown", keyHandler);
+    };
+  }, [showPopover]);
+
+  const [ownerToken] = useState(() => {
+    if (typeof window === "undefined") return "";
+    return localStorage.getItem("relay-owner-token") || "";
+  });
+  const [copiedStep, setCopiedStep] = useState<number | null>(null);
+
+  const copyText = (text: string, step: number) => {
+    navigator.clipboard.writeText(text).catch(() => {});
+    setCopiedStep(step);
+    setTimeout(() => setCopiedStep(null), 2000);
+  };
+
+  const steps = [
+    { label: "Install", command: "curl -fsSL https://code.stoff.dev/install.sh | sh" },
+    { label: "Connect", command: `relay setup --token ${ownerToken}` },
+    { label: "Start", command: "relay start" },
+  ];
+
+  return (
+    <span className="relative" ref={ref}>
+      <button
+        type="button"
+        onClick={() => setShowPopover(prev => !prev)}
+        className="flex items-center gap-1.5 hover:bg-surface-hover px-1.5 py-0.5 rounded-[4px] transition-colors -ml-1.5"
+      >
+        <span className={`w-[5px] h-[5px] rounded-full ${hasOnlineAgent ? "bg-accent" : "bg-dim"}`} />
+        <span className="text-[11px] font-mono text-muted">{hasOnlineAgent ? "agent" : "no agent"}</span>
+      </button>
+      {showPopover && (
+        <div
+          className="absolute top-full left-0 mt-2 z-50 w-[320px] bg-cmd border border-border rounded-[8px] animate-scale-in"
+          style={{ boxShadow: "0 12px 32px rgba(0,0,0,0.3)" }}
+        >
+          <div className="px-3.5 py-2.5 border-b border-border flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className={`w-[6px] h-[6px] rounded-full ${hasOnlineAgent ? "bg-green-500" : "bg-dim"}`} />
+              <span className="text-[12px] font-medium text-foreground">
+                {hasOnlineAgent ? "Agent connected" : "Agent not connected"}
+              </span>
+            </div>
+            <button type="button" onClick={() => setShowPopover(false)} className="text-[10px] text-dim hover:text-muted">✕</button>
+          </div>
+          <div className="px-3.5 py-3">
+            {hasOnlineAgent ? (
+              <p className="text-[11px] text-body">
+                Your local agent is running. It can read files, execute commands, and interact with your codebase.
+              </p>
+            ) : (
+              <div>
+                <p className="text-[11px] text-body mb-2.5">
+                  Connect the agent to give Relay access to your files and terminal.
+                </p>
+                <div className="space-y-2">
+                  {steps.map((step, i) => (
+                    <div key={step.label}>
+                      <div className="flex items-center gap-1.5 mb-0.5">
+                        <span className="text-[9px] font-mono font-medium text-accent w-3 text-right">{i + 1}</span>
+                        <span className="text-[11px] font-medium text-body">{step.label}</span>
+                      </div>
+                      <div className="ml-[18px] flex items-center gap-1">
+                        <code className="flex-1 text-[10px] font-mono px-2 py-1 bg-surface-hover border border-border-subtle rounded-[3px] text-muted overflow-x-auto whitespace-nowrap">
+                          {step.command}
+                        </code>
+                        <button
+                          type="button"
+                          onClick={() => copyText(step.command, i)}
+                          className="shrink-0 text-[9px] font-mono px-1.5 py-1 text-dim hover:text-muted transition-colors"
+                        >
+                          {copiedStep === i ? "✓" : "copy"}
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </span>
+  );
+}
 
 function ConnectionIndicator({ state }: { state: ConnectionState }) {
   const [hydrated, setHydrated] = useState(false);

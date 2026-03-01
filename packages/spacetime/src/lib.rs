@@ -82,6 +82,7 @@ pub struct Agent {
     user_id: Identity,
     owner_token: String,
     workdir: String,
+    workspace_tree: String,
     status: String,
     last_heartbeat: Timestamp,
     created_at: Timestamp,
@@ -109,6 +110,7 @@ const MAX_CONTENT_LEN: usize = 100_000;
 const MAX_TOOL_ARGS_LEN: usize = 50_000;
 const MAX_TOOL_OUTPUT_LEN: usize = 50_000;
 const MAX_WORKDIR_LEN: usize = 500;
+const MAX_WORKSPACE_TREE_LEN: usize = 10_000;
 const MAX_OWNER_TOKEN_LEN: usize = 256;
 
 fn check_len(value: &str, max: usize, field: &str) -> Result<(), String> {
@@ -125,6 +127,7 @@ fn is_valid_session_transition(from: &str, to: &str) -> bool {
             | ("streaming", "idle")
             | ("streaming", "waiting_for_tool")
             | ("waiting_for_tool", "streaming")
+            | ("waiting_for_tool", "idle")
             | (_, "error")
             | ("error", "idle")
     )
@@ -224,7 +227,7 @@ pub fn send_message(
     role: String,
     status: String,
 ) -> Result<(), String> {
-    if !["user", "assistant", "tool"].contains(&role.as_str()) {
+    if !["user", "assistant", "tool", "explore"].contains(&role.as_str()) {
         return Err("Invalid role".to_string());
     }
     if !["queued", "streaming", "complete", "error"].contains(&status.as_str()) {
@@ -312,6 +315,7 @@ pub fn append_message_part(
 }
 
 #[reducer]
+#[allow(clippy::too_many_arguments)]
 pub fn create_tool_command(
     ctx: &ReducerContext,
     tool_call_id: String,
@@ -320,8 +324,12 @@ pub fn create_tool_command(
     agent_id: String,
     tool_name: String,
     tool_args: String,
+    status: String,
 ) -> Result<(), String> {
     check_len(&tool_args, MAX_TOOL_ARGS_LEN, "Tool args")?;
+    if !["generating", "pending"].contains(&status.as_str()) {
+        return Err("Invalid initial status".to_string());
+    }
     if ctx.db.message().id().find(&message_id).is_none() {
         return Err(format!("Message {} not found", message_id));
     }
@@ -338,7 +346,7 @@ pub fn create_tool_command(
         agent_id,
         tool_name,
         tool_args,
-        status: "pending".to_string(),
+        status,
         created_at: ctx.timestamp,
         updated_at: ctx.timestamp,
     });
@@ -352,11 +360,11 @@ pub fn update_tool_command_status(
     tool_command_id: u64,
     status: String,
 ) -> Result<(), String> {
-    if !["pending", "executing", "completed", "error"].contains(&status.as_str()) {
+    if !["generating", "pending", "executing", "completed", "error"].contains(&status.as_str()) {
         return Err("Invalid status".to_string());
     }
 
-    if let Some(mut command) = ctx.db.tool_command().id().find(&tool_command_id) {
+    if let Some(mut command) = ctx.db.tool_command().id().find(tool_command_id) {
         command.status = status;
         command.updated_at = ctx.timestamp;
         ctx.db.tool_command().id().update(command);
@@ -364,6 +372,43 @@ pub fn update_tool_command_status(
     } else {
         Err("Tool command not found".to_string())
     }
+}
+
+#[reducer]
+pub fn update_tool_command_args(
+    ctx: &ReducerContext,
+    tool_command_id: u64,
+    tool_args: String,
+) -> Result<(), String> {
+    check_len(&tool_args, MAX_TOOL_ARGS_LEN, "Tool args")?;
+    if let Some(mut command) = ctx.db.tool_command().id().find(tool_command_id) {
+        command.tool_args = tool_args;
+        command.updated_at = ctx.timestamp;
+        ctx.db.tool_command().id().update(command);
+        Ok(())
+    } else {
+        Err("Tool command not found".to_string())
+    }
+}
+
+#[reducer]
+pub fn finalize_tool_command(
+    ctx: &ReducerContext,
+    tool_call_id: String,
+    tool_args: String,
+) -> Result<(), String> {
+    check_len(&tool_args, MAX_TOOL_ARGS_LEN, "Tool args")?;
+    let mut command = ctx
+        .db
+        .tool_command()
+        .iter()
+        .find(|c| c.tool_call_id == tool_call_id)
+        .ok_or_else(|| format!("Tool command with call_id {} not found", tool_call_id))?;
+    command.tool_args = tool_args;
+    command.status = "pending".to_string();
+    command.updated_at = ctx.timestamp;
+    ctx.db.tool_command().id().update(command);
+    Ok(())
 }
 
 #[reducer]
@@ -378,7 +423,7 @@ pub fn create_tool_result(
     if let Some(ref e) = error {
         check_len(e, MAX_ERROR_LEN, "Tool error")?;
     }
-    if ctx.db.tool_command().id().find(&tool_command_id).is_none() {
+    if ctx.db.tool_command().id().find(tool_command_id).is_none() {
         return Err(format!("Tool command {} not found", tool_command_id));
     }
     ctx.db.tool_result().insert(ToolResult {
@@ -432,15 +477,18 @@ pub fn register_agent(
     name: String,
     owner_token: String,
     workdir: String,
+    workspace_tree: String,
 ) -> Result<(), String> {
     check_len(&name, MAX_AGENT_NAME, "Agent name")?;
     check_len(&owner_token, MAX_OWNER_TOKEN_LEN, "Owner token")?;
     check_len(&workdir, MAX_WORKDIR_LEN, "Working directory")?;
+    check_len(&workspace_tree, MAX_WORKSPACE_TREE_LEN, "Workspace tree")?;
     if let Some(mut existing) = ctx.db.agent().id().find(&agent_id) {
         check_agent_owner(ctx, &existing)?;
         existing.status = "online".to_string();
         existing.last_heartbeat = ctx.timestamp;
         existing.workdir = workdir;
+        existing.workspace_tree = workspace_tree;
         existing.owner_token = owner_token;
         ctx.db.agent().id().update(existing);
     } else {
@@ -450,6 +498,7 @@ pub fn register_agent(
             user_id: ctx.sender(),
             owner_token,
             workdir,
+            workspace_tree,
             status: "online".to_string(),
             last_heartbeat: ctx.timestamp,
             created_at: ctx.timestamp,
@@ -509,11 +558,16 @@ pub fn reap_stale_agents(ctx: &ReducerContext, max_stale_secs: u32) -> Result<()
 
 #[reducer]
 pub fn delete_session(ctx: &ReducerContext, session_id: String) -> Result<(), String> {
-    ctx.db
+    let session = ctx
+        .db
         .session()
         .id()
         .find(&session_id)
         .ok_or_else(|| "Session not found".to_string())?;
+
+    if session.status == "streaming" || session.status == "waiting_for_tool" {
+        return Err("Cannot delete an active session".to_string());
+    }
 
     let tool_commands: Vec<_> = ctx
         .db
@@ -529,9 +583,9 @@ pub fn delete_session(ctx: &ReducerContext, session_id: String) -> Result<(), St
             .filter(&cmd.id)
             .collect();
         for r in results {
-            ctx.db.tool_result().id().delete(&r.id);
+            ctx.db.tool_result().id().delete(r.id);
         }
-        ctx.db.tool_command().id().delete(&cmd.id);
+        ctx.db.tool_command().id().delete(cmd.id);
     }
 
     let verifications: Vec<_> = ctx
@@ -541,14 +595,14 @@ pub fn delete_session(ctx: &ReducerContext, session_id: String) -> Result<(), St
         .filter(&session_id)
         .collect();
     for v in verifications {
-        ctx.db.verification().id().delete(&v.id);
+        ctx.db.verification().id().delete(v.id);
     }
 
     let messages: Vec<_> = ctx.db.message().session_id().filter(&session_id).collect();
     for msg in &messages {
         let parts: Vec<_> = ctx.db.message_part().message_id().filter(&msg.id).collect();
         for part in parts {
-            ctx.db.message_part().id().delete(&part.id);
+            ctx.db.message_part().id().delete(part.id);
         }
         ctx.db.message().id().delete(&msg.id);
     }
@@ -589,7 +643,7 @@ pub fn delete_message(ctx: &ReducerContext, message_id: String) -> Result<(), St
         .filter(&message_id)
         .collect();
     for v in verifications {
-        ctx.db.verification().id().delete(&v.id);
+        ctx.db.verification().id().delete(v.id);
     }
 
     let tool_commands: Vec<_> = ctx
@@ -606,9 +660,9 @@ pub fn delete_message(ctx: &ReducerContext, message_id: String) -> Result<(), St
             .filter(&cmd.id)
             .collect();
         for r in results {
-            ctx.db.tool_result().id().delete(&r.id);
+            ctx.db.tool_result().id().delete(r.id);
         }
-        ctx.db.tool_command().id().delete(&cmd.id);
+        ctx.db.tool_command().id().delete(cmd.id);
     }
 
     let parts: Vec<_> = ctx
@@ -618,7 +672,7 @@ pub fn delete_message(ctx: &ReducerContext, message_id: String) -> Result<(), St
         .filter(&message_id)
         .collect();
     for part in parts {
-        ctx.db.message_part().id().delete(&part.id);
+        ctx.db.message_part().id().delete(part.id);
     }
 
     ctx.db.message().id().delete(&message_id);
@@ -645,7 +699,7 @@ pub fn update_message_content(
         .filter(&message_id)
         .collect();
     for part in parts {
-        ctx.db.message_part().id().delete(&part.id);
+        ctx.db.message_part().id().delete(part.id);
     }
 
     ctx.db.message_part().insert(MessagePart {
@@ -724,6 +778,7 @@ pub fn cleanup_old_sessions(ctx: &ReducerContext, max_age_days: u32) -> Result<(
         .db
         .session()
         .iter()
+        .filter(|s| s.status == "idle" || s.status == "error")
         .filter(|s| {
             let age = now_micros - s.created_at.to_micros_since_unix_epoch();
             i128::from(age) > max_age_micros
@@ -746,9 +801,9 @@ pub fn cleanup_old_sessions(ctx: &ReducerContext, max_age_days: u32) -> Result<(
                 .filter(&cmd.id)
                 .collect();
             for r in results {
-                ctx.db.tool_result().id().delete(&r.id);
+                ctx.db.tool_result().id().delete(r.id);
             }
-            ctx.db.tool_command().id().delete(&cmd.id);
+            ctx.db.tool_command().id().delete(cmd.id);
         }
 
         let verifications: Vec<_> = ctx
@@ -758,14 +813,14 @@ pub fn cleanup_old_sessions(ctx: &ReducerContext, max_age_days: u32) -> Result<(
             .filter(&session.id)
             .collect();
         for v in verifications {
-            ctx.db.verification().id().delete(&v.id);
+            ctx.db.verification().id().delete(v.id);
         }
 
         let messages: Vec<_> = ctx.db.message().session_id().filter(&session.id).collect();
         for msg in &messages {
             let parts: Vec<_> = ctx.db.message_part().message_id().filter(&msg.id).collect();
             for part in parts {
-                ctx.db.message_part().id().delete(&part.id);
+                ctx.db.message_part().id().delete(part.id);
             }
             ctx.db.message().id().delete(&msg.id);
         }

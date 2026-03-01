@@ -21,6 +21,7 @@ pub mod create_verification_reducer;
 pub mod delete_message_reducer;
 pub mod delete_session_reducer;
 pub mod fail_message_reducer;
+pub mod finalize_tool_command_reducer;
 pub mod message_part_table;
 pub mod message_part_type;
 pub mod message_table;
@@ -59,6 +60,7 @@ pub use create_verification_reducer::create_verification;
 pub use delete_message_reducer::delete_message;
 pub use delete_session_reducer::delete_session;
 pub use fail_message_reducer::fail_message;
+pub use finalize_tool_command_reducer::finalize_tool_command;
 pub use message_part_table::*;
 pub use message_part_type::MessagePart;
 pub use message_table::*;
@@ -122,6 +124,7 @@ pub enum Reducer {
         agent_id: String,
         tool_name: String,
         tool_args: String,
+        status: String,
     },
     CreateToolResult {
         tool_command_id: u64,
@@ -145,6 +148,10 @@ pub enum Reducer {
         message_id: String,
         error: String,
     },
+    FinalizeToolCommand {
+        tool_call_id: String,
+        tool_args: String,
+    },
     ReapStaleAgents {
         max_stale_secs: u32,
     },
@@ -153,6 +160,7 @@ pub enum Reducer {
         name: String,
         owner_token: String,
         workdir: String,
+        workspace_tree: String,
     },
     SendMessage {
         message_id: String,
@@ -211,6 +219,7 @@ impl __sdk::Reducer for Reducer {
             Reducer::DeleteMessage { .. } => "delete_message",
             Reducer::DeleteSession { .. } => "delete_session",
             Reducer::FailMessage { .. } => "fail_message",
+            Reducer::FinalizeToolCommand { .. } => "finalize_tool_command",
             Reducer::ReapStaleAgents { .. } => "reap_stale_agents",
             Reducer::RegisterAgent { .. } => "register_agent",
             Reducer::SendMessage { .. } => "send_message",
@@ -277,6 +286,7 @@ impl __sdk::Reducer for Reducer {
                 agent_id,
                 tool_name,
                 tool_args,
+                status,
             } => __sats::bsatn::to_vec(&create_tool_command_reducer::CreateToolCommandArgs {
                 tool_call_id: tool_call_id.clone(),
                 message_id: message_id.clone(),
@@ -284,6 +294,7 @@ impl __sdk::Reducer for Reducer {
                 agent_id: agent_id.clone(),
                 tool_name: tool_name.clone(),
                 tool_args: tool_args.clone(),
+                status: status.clone(),
             }),
             Reducer::CreateToolResult {
                 tool_command_id,
@@ -323,6 +334,13 @@ impl __sdk::Reducer for Reducer {
                     error: error.clone(),
                 })
             }
+            Reducer::FinalizeToolCommand {
+                tool_call_id,
+                tool_args,
+            } => __sats::bsatn::to_vec(&finalize_tool_command_reducer::FinalizeToolCommandArgs {
+                tool_call_id: tool_call_id.clone(),
+                tool_args: tool_args.clone(),
+            }),
             Reducer::ReapStaleAgents { max_stale_secs } => {
                 __sats::bsatn::to_vec(&reap_stale_agents_reducer::ReapStaleAgentsArgs {
                     max_stale_secs: max_stale_secs.clone(),
@@ -333,11 +351,13 @@ impl __sdk::Reducer for Reducer {
                 name,
                 owner_token,
                 workdir,
+                workspace_tree,
             } => __sats::bsatn::to_vec(&register_agent_reducer::RegisterAgentArgs {
                 agent_id: agent_id.clone(),
                 name: name.clone(),
                 owner_token: owner_token.clone(),
                 workdir: workdir.clone(),
+                workspace_tree: workspace_tree.clone(),
             }),
             Reducer::SendMessage {
                 message_id,

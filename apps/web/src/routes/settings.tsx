@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useTheme } from "../hooks/use-theme";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 
 export const Route = createFileRoute("/settings")({
   component: SettingsPage,
@@ -9,25 +9,47 @@ export const Route = createFileRoute("/settings")({
 function SettingsPage() {
   const { theme, toggle } = useTheme();
   const navigate = useNavigate();
-  const [ownerToken, setOwnerToken] = useState("");
-  const [copied, setCopied] = useState(false);
-
-  useEffect(() => {
-    const token = localStorage.getItem("relay-owner-token");
+  const [ownerToken] = useState(() => {
+    if (typeof window === "undefined") return "";
+    let token = localStorage.getItem("relay-owner-token");
     if (!token) {
-      const newToken = crypto.randomUUID();
-      localStorage.setItem("relay-owner-token", newToken);
-      setOwnerToken(newToken);
-    } else {
-      setOwnerToken(token);
+      token = crypto.randomUUID();
+      localStorage.setItem("relay-owner-token", token);
     }
-  }, []);
+    return token;
+  });
+  const [copied, setCopied] = useState(false);
+  const [copiedStep, setCopiedStep] = useState<number | null>(null);
 
   const copyToken = () => {
     navigator.clipboard.writeText(ownerToken);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
+
+  const copyText = (text: string, step: number) => {
+    navigator.clipboard.writeText(text).catch(() => {});
+    setCopiedStep(step);
+    setTimeout(() => setCopiedStep(null), 2000);
+  };
+
+  const steps = [
+    {
+      label: "Install",
+      description: "Auto-detects your platform",
+      command: "curl -fsSL https://code.stoff.dev/install.sh | sh",
+    },
+    {
+      label: "Connect",
+      description: "Link the agent to your account",
+      command: `relay setup --token ${ownerToken}`,
+    },
+    {
+      label: "Start",
+      description: "Run the agent in your project directory",
+      command: "relay start",
+    },
+  ];
 
   return (
     <div className="flex flex-col h-full">
@@ -60,12 +82,48 @@ function SettingsPage() {
               </button>
             </div>
           </section>
+
           <section>
-            <h2 className="text-[14px] font-semibold text-foreground mb-4">Agent</h2>
+            <h2 className="text-[14px] font-semibold text-foreground mb-4">Agent Setup</h2>
+            <p className="text-[12px] text-muted mb-4">
+              The agent runs on your machine and gives Relay access to your files, terminal, and codebase. Follow these steps to get it connected.
+            </p>
+            <div className="space-y-3 mb-6">
+              {steps.map((step, i) => (
+                <div key={step.label}>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-[10px] font-mono font-medium text-accent w-4 text-right">{i + 1}</span>
+                    <span className="text-[12px] font-medium text-body">{step.label}</span>
+                    <span className="text-[11px] text-dim">{step.description}</span>
+                  </div>
+                  <div className="ml-6">
+                    <div className="flex items-center gap-1.5">
+                      <code className="flex-1 text-[11px] font-mono px-2.5 py-1.5 bg-surface-hover border border-border-subtle rounded-[4px] text-muted overflow-x-auto whitespace-nowrap">
+                        {step.command}
+                      </code>
+                      <button
+                        type="button"
+                        onClick={() => copyText(step.command, i)}
+                        className="shrink-0 text-[10px] font-mono px-2 py-1.5 text-dim hover:text-muted transition-colors"
+                      >
+                        {copiedStep === i ? "✓" : "copy"}
+                      </button>
+                    </div>
+
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section>
+            <h2 className="text-[14px] font-semibold text-foreground mb-4">Account</h2>
             <div className="space-y-3">
               <div>
-                <p className="text-[13px] text-body mb-2">Owner Token</p>
-                <p className="text-[11px] text-muted mb-3">Use this token when setting up your local agent with `relay setup`</p>
+                <p className="text-[13px] text-body mb-1">Owner Token</p>
+                <p className="text-[11px] text-muted mb-2">
+                  This token links your browser to your agent. It was generated automatically when you first opened Relay.
+                </p>
                 <div className="flex items-center gap-2">
                   <code className="flex-1 px-3 py-2 bg-surface-hover border border-border rounded-[6px] text-[11px] font-mono text-muted overflow-x-auto whitespace-nowrap">
                     {ownerToken}
@@ -81,6 +139,7 @@ function SettingsPage() {
               </div>
             </div>
           </section>
+
           <section>
             <h2 className="text-[14px] font-semibold text-foreground mb-4">About</h2>
             <div className="space-y-2 text-[12px] font-mono text-muted">

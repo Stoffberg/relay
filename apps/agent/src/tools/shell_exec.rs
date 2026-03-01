@@ -24,6 +24,9 @@ pub async fn execute(command: &str, workdir: Option<&str>) -> Result<String> {
         cmd.current_dir(dir);
     }
 
+    #[cfg(unix)]
+    unsafe { cmd.pre_exec(|| { libc::setpgid(0, 0); Ok(()) }); }
+
     cmd.kill_on_drop(true);
     let output = match tokio::time::timeout(
         std::time::Duration::from_secs(TIMEOUT_SECS),
@@ -75,8 +78,11 @@ pub async fn execute(command: &str, workdir: Option<&str>) -> Result<String> {
 
 fn truncate_output(bytes: &[u8]) -> String {
     if bytes.len() > MAX_OUTPUT_BYTES {
-        let truncated = String::from_utf8_lossy(&bytes[..MAX_OUTPUT_BYTES]);
-        format!("{truncated}\n[output truncated at 1MB]")
+        let safe = match std::str::from_utf8(&bytes[..MAX_OUTPUT_BYTES]) {
+            Ok(s) => s.to_string(),
+            Err(e) => String::from_utf8_lossy(&bytes[..e.valid_up_to()]).to_string(),
+        };
+        format!("{safe}\n[output truncated at 1MB]")
     } else {
         String::from_utf8_lossy(bytes).to_string()
     }

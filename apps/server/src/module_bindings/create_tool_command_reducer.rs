@@ -13,6 +13,7 @@ pub(super) struct CreateToolCommandArgs {
     pub agent_id: String,
     pub tool_name: String,
     pub tool_args: String,
+    pub status: String,
 }
 
 impl From<CreateToolCommandArgs> for super::Reducer {
@@ -24,6 +25,7 @@ impl From<CreateToolCommandArgs> for super::Reducer {
             agent_id: args.agent_id,
             tool_name: args.tool_name,
             tool_args: args.tool_args,
+            status: args.status,
         }
     }
 }
@@ -51,6 +53,7 @@ pub trait create_tool_command {
         agent_id: String,
         tool_name: String,
         tool_args: String,
+        status: String,
     ) -> __sdk::Result<()> {
         self.create_tool_command_then(
             tool_call_id,
@@ -59,6 +62,7 @@ pub trait create_tool_command {
             agent_id,
             tool_name,
             tool_args,
+            status,
             |_, _| {},
         )
     }
@@ -77,6 +81,7 @@ pub trait create_tool_command {
         agent_id: String,
         tool_name: String,
         tool_args: String,
+        status: String,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
@@ -93,6 +98,7 @@ impl create_tool_command for super::RemoteReducers {
         agent_id: String,
         tool_name: String,
         tool_args: String,
+        status: String,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
@@ -106,6 +112,7 @@ impl create_tool_command for super::RemoteReducers {
                 agent_id,
                 tool_name,
                 tool_args,
+                status,
             },
             callback,
         )

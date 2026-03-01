@@ -43,6 +43,9 @@ pub async fn execute(path: &str, offset: Option<usize>, limit: Option<usize>) ->
                 "Binary file ({size} bytes). Use shell_exec to inspect."
             ));
         }
+        Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
+            return Err(anyhow::anyhow!("Permission denied: {path}"));
+        }
         Err(e) => return Err(e.into()),
     };
     let lines: Vec<&str> = content.lines().collect();

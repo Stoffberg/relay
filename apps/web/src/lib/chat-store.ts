@@ -45,7 +45,7 @@ export function buildChatMessages(
   sessionId: string,
   optimisticMessages: ChatMessage[],
 ): ChatMessage[] {
-  const sessionMessages = [...messages.filter(m => m.sessionId === sessionId)];
+  const sessionMessages = [...messages.filter(m => m.sessionId === sessionId && m.role !== "explore")];
   sessionMessages.sort((a, b) => extractTimestamp(a.createdAt) - extractTimestamp(b.createdAt));
 
   const partsByMessage = new Map<string, MessagePart[]>();
@@ -125,24 +125,26 @@ function groupConsecutiveAssistantMessages(messages: ChatMessage[]): ChatMessage
     const prev = grouped.at(-1);
     if (prev && prev.role === "assistant") {
       const newSegments = buildSegments(msg);
-      prev.segments = [...(prev.segments || []), ...newSegments];
+      const merged = { ...prev };
+      merged.segments = [...(prev.segments || []), ...newSegments];
 
-      const allContent = (prev.segments)
+      const allContent = (merged.segments)
         .filter((s): s is MessageSegment & { type: "text" } => s.type === "text")
         .map(s => s.content)
         .join("\n\n");
-      prev.content = allContent;
+      merged.content = allContent;
 
-      const allCalls = (prev.segments)
+      const allCalls = (merged.segments)
         .filter((s): s is MessageSegment & { type: "tool_calls" } => s.type === "tool_calls")
         .flatMap(s => s.calls);
-      prev.toolCalls = allCalls.length > 0 ? allCalls : undefined;
+      merged.toolCalls = allCalls.length > 0 ? allCalls : undefined;
 
-      prev.promptTokens = (prev.promptTokens ?? 0) + (msg.promptTokens ?? 0);
-      prev.completionTokens = (prev.completionTokens ?? 0) + (msg.completionTokens ?? 0);
+      merged.promptTokens = (prev.promptTokens ?? 0) + (msg.promptTokens ?? 0);
+      merged.completionTokens = (prev.completionTokens ?? 0) + (msg.completionTokens ?? 0);
 
-      prev.status = msg.status;
-      prev.createdAt = msg.createdAt ?? prev.createdAt;
+      merged.status = msg.status;
+      merged.createdAt = msg.createdAt ?? prev.createdAt;
+      grouped[grouped.length - 1] = merged;
     } else {
       const initial = { ...msg };
       initial.segments = buildSegments(msg);

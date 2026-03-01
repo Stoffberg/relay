@@ -11,6 +11,7 @@ pub(super) struct RegisterAgentArgs {
     pub name: String,
     pub owner_token: String,
     pub workdir: String,
+    pub workspace_tree: String,
 }
 
 impl From<RegisterAgentArgs> for super::Reducer {
@@ -20,6 +21,7 @@ impl From<RegisterAgentArgs> for super::Reducer {
             name: args.name,
             owner_token: args.owner_token,
             workdir: args.workdir,
+            workspace_tree: args.workspace_tree,
         }
     }
 }
@@ -45,8 +47,16 @@ pub trait register_agent {
         name: String,
         owner_token: String,
         workdir: String,
+        workspace_tree: String,
     ) -> __sdk::Result<()> {
-        self.register_agent_then(agent_id, name, owner_token, workdir, |_, _| {})
+        self.register_agent_then(
+            agent_id,
+            name,
+            owner_token,
+            workdir,
+            workspace_tree,
+            |_, _| {},
+        )
     }
 
     /// Request that the remote module invoke the reducer `register_agent` to run as soon as possible,
@@ -61,6 +71,7 @@ pub trait register_agent {
         name: String,
         owner_token: String,
         workdir: String,
+        workspace_tree: String,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
@@ -75,6 +86,7 @@ impl register_agent for super::RemoteReducers {
         name: String,
         owner_token: String,
         workdir: String,
+        workspace_tree: String,
 
         callback: impl FnOnce(&super::ReducerEventContext, Result<Result<(), String>, __sdk::InternalError>)
             + Send
@@ -86,6 +98,7 @@ impl register_agent for super::RemoteReducers {
                 name,
                 owner_token,
                 workdir,
+                workspace_tree,
             },
             callback,
         )

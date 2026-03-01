@@ -582,9 +582,10 @@ async fn main() -> Result<()> {
         let workdir = std::env::current_dir()
             .map(|p| p.to_string_lossy().to_string())
             .unwrap_or_default();
+        let workspace_tree = compute_workspace_tree(&workdir);
         if let Err(e) = conn
             .reducers
-            .register_agent(agent_id.clone(), config.agent_name.clone(), config.owner_token.clone(), workdir)
+            .register_agent(agent_id.clone(), config.agent_name.clone(), config.owner_token.clone(), workdir, workspace_tree)
         {
             tracing::error!("Failed to register agent: {e}");
             retry_count += 1;
@@ -844,9 +845,14 @@ fn truncate_output(output: &str) -> String {
     if output.len() <= MAX_TOOL_OUTPUT {
         return output.to_string();
     }
-    let truncated = &output[..MAX_TOOL_OUTPUT];
-    let end = truncated.rfind('\n').unwrap_or(MAX_TOOL_OUTPUT);
-    format!("{}...\n(truncated from {} to {} bytes)", &output[..end], output.len(), end)
+    let boundary = output.char_indices()
+        .take_while(|(i, _)| *i <= MAX_TOOL_OUTPUT)
+        .last()
+        .map(|(i, c)| i + c.len_utf8())
+        .unwrap_or(0);
+    let safe = &output[..boundary];
+    let end = safe.rfind('\n').unwrap_or(boundary);
+    format!("{}...\n(truncated from {} to {} chars)", &output[..end], output.chars().count(), end)
 }
 
 async fn retry_reducer<F, E>(mut f: F, name: &str, cmd_id: u64)
@@ -888,7 +894,8 @@ async fn execute_tool(tool_name: &str, tool_args_json: &str) -> Result<String> {
             let content = args["content"]
                 .as_str()
                 .ok_or_else(|| anyhow::anyhow!("Missing content"))?;
-            tools::file_write::execute(path, content.to_string()).await
+            let overwrite = args["overwrite"].as_bool().unwrap_or(false);
+            tools::file_write::execute(path, content.to_string(), overwrite).await
         }
         "file_edit" => {
             let path = args["path"]
@@ -915,7 +922,7 @@ async fn execute_tool(tool_name: &str, tool_args_json: &str) -> Result<String> {
                 .as_str()
                 .ok_or_else(|| anyhow::anyhow!("Missing pattern"))?;
             let path = args["path"].as_str();
-            tools::glob::execute(pattern, path).await
+            tools::glob::execute(pattern, path, None).await
         }
         "grep" => {
             let pattern = args["pattern"]
@@ -927,12 +934,6 @@ async fn execute_tool(tool_name: &str, tool_args_json: &str) -> Result<String> {
             let path = args["path"].as_str().unwrap_or(&home_str);
             let include = args["include"].as_str();
             tools::grep::execute(pattern, path, include).await
-        }
-        "list_dir" => {
-            let path = args["path"]
-                .as_str()
-                .ok_or_else(|| anyhow::anyhow!("Missing path"))?;
-            tools::list_dir::execute(path).await
         }
         "web_fetch" => {
             let url = args["url"]
@@ -951,4 +952,58 @@ fn hostname() -> String {
         .and_then(|o| String::from_utf8(o.stdout).ok())
         .map(|s| s.trim().to_string())
         .unwrap_or_else(|| "unknown".to_string())
+}
+
+fn compute_workspace_tree(workdir: &str) -> String {
+    let output = std::process::Command::new("find")
+        .arg(".")
+        .arg("-maxdepth")
+        .arg("3")
+        .arg("-not")
+        .arg("-path")
+        .arg("*/.git/*")
+        .arg("-not")
+        .arg("-path")
+        .arg("*/node_modules/*")
+        .arg("-not")
+        .arg("-path")
+        .arg("*/target/*")
+        .arg("-not")
+        .arg("-path")
+        .arg("*/.next/*")
+        .arg("-not")
+        .arg("-path")
+        .arg("*/.turbo/*")
+        .arg("-not")
+        .arg("-path")
+        .arg("*/dist/*")
+        .arg("-not")
+        .arg("-path")
+        .arg("*/module_bindings/*")
+        .arg("-not")
+        .arg("-name")
+        .arg(".DS_Store")
+        .arg("-not")
+        .arg("-name")
+        .arg("*.lock")
+        .arg("-not")
+        .arg("-name")
+        .arg("*.d")
+        .current_dir(workdir)
+        .output();
+
+    match output {
+        Ok(o) if o.status.success() => {
+            let tree = String::from_utf8_lossy(&o.stdout);
+            let mut lines: Vec<&str> = tree.lines().collect();
+            lines.sort();
+            let result = lines.join("\n");
+            if result.len() > 9000 {
+                result[..9000].to_string()
+            } else {
+                result
+            }
+        }
+        _ => String::new(),
+    }
 }
