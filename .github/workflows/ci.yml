@@ -82,11 +82,9 @@ jobs:
         include:
           - os: ubuntu-latest
             platform: linux
-            target: ""
             suffix: ""
           - os: macos-latest
             platform: macos
-            target: ""
             suffix: "-macos-aarch64"
           - os: windows-latest
             platform: windows
@@ -105,22 +103,27 @@ jobs:
       - run: bun install
       - run: bun run build:ci
       - name: Build release
-        run: cargo build --release --all
-        env:
-          CARGO_BUILD_TARGET: ${{ matrix.target }}
+        shell: bash
+        run: |
+          if [ -n "${{ matrix.target }}" ]; then
+            cargo build --release -p relay-agent --target "${{ matrix.target }}"
+          else
+            cargo build --release -p relay-agent
+          fi
       - name: Rename binary
         if: matrix.suffix != ''
         shell: bash
         run: |
           if [ "${{ matrix.os }}" = "windows-latest" ]; then
-            mv target/release/relay.exe target/release/relay${{ matrix.suffix }}
+            mv target/${{ matrix.target }}/release/relay.exe target/${{ matrix.target }}/release/relay${{ matrix.suffix }}
           else
             mv target/release/relay target/release/relay${{ matrix.suffix }}
           fi
       - name: Upload release
+        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: target/release/relay${{ matrix.suffix }}
+          files: target/**/release/relay*
           draft: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
