@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   lint:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v1
@@ -25,7 +25,7 @@ jobs:
 
   typecheck:
     needs: lint
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v1
@@ -36,7 +36,7 @@ jobs:
 
   test-js:
     needs: lint
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v1
@@ -46,7 +46,7 @@ jobs:
       - run: bun run test
 
   clippy:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -57,7 +57,7 @@ jobs:
 
   test-rust:
     needs: clippy
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -69,15 +69,15 @@ jobs:
     strategy:
       matrix:
         include:
-          - os: ubuntu-latest
+          - os: blacksmith-4vcpu-ubuntu-2404
             platform: linux
             target: ""
             suffix: ""
-          - os: macos-latest
+          - os: blacksmith-6vcpu-macos-latest
             platform: macos
             target: ""
             suffix: "-macos-aarch64"
-          - os: windows-latest
+          - os: blacksmith-4vcpu-windows-2025
             platform: windows
             target: x86_64-pc-windows-msvc
             suffix: "-windows-x86_64.exe"
@@ -101,7 +101,7 @@ jobs:
         if: matrix.suffix != ''
         shell: bash
         run: |
-          if [ "${{ matrix.os }}" = "windows-latest" ]; then
+          if [ "${{ matrix.os }}" = "blacksmith-4vcpu-windows-2025" ]; then
             mv target/release/relay.exe target/release/relay${{ matrix.suffix }}
           else
             mv target/release/relay target/release/relay${{ matrix.suffix }}
@@ -115,7 +115,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   audit:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -131,7 +131,7 @@ jobs:
   deploy:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v4
         with:
