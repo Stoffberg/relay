@@ -18,5 +18,5 @@ serde_json = "1"
 anyhow = "1"
 tracing = "0.1"
 tracing-subscriber = "0.3"
-spacetimedb-sdk = "2.0.2"
+spacetimedb-sdk = "2.5.0"
 uuid = { version = "1", features = ["v4"] }

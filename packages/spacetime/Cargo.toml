@@ -8,5 +8,5 @@ crate-type = ["cdylib"]
 
 [dependencies]
 serde = { workspace = true }
-spacetimedb = "2.0.2"
+spacetimedb = "2.5.0"
 log = "0.4"
