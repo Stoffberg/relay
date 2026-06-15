@@ -14,10 +14,10 @@ jobs:
       matrix:
         include:
           - target: x86_64-apple-darwin
-            os: blacksmith-6vcpu-macos-latest
+            os: macos-latest
             archive: tar.gz
           - target: aarch64-apple-darwin
-            os: blacksmith-6vcpu-macos-latest
+            os: macos-latest
             archive: tar.gz
           - target: x86_64-unknown-linux-gnu
             os: blacksmith-4vcpu-ubuntu-2404
@@ -27,7 +27,7 @@ jobs:
             archive: tar.gz
             use_cross: true
           - target: x86_64-pc-windows-msvc
-            os: blacksmith-4vcpu-windows-2025
+            os: windows-latest
             archive: zip
 
     runs-on: ${{ matrix.os }}

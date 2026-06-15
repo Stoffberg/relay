@@ -73,11 +73,11 @@ jobs:
             platform: linux
             target: ""
             suffix: ""
-          - os: blacksmith-6vcpu-macos-latest
+          - os: macos-latest
             platform: macos
             target: ""
             suffix: "-macos-aarch64"
-          - os: blacksmith-4vcpu-windows-2025
+          - os: windows-latest
             platform: windows
             target: x86_64-pc-windows-msvc
             suffix: "-windows-x86_64.exe"
@@ -101,7 +101,7 @@ jobs:
         if: matrix.suffix != ''
         shell: bash
         run: |
-          if [ "${{ matrix.os }}" = "blacksmith-4vcpu-windows-2025" ]; then
+          if [ "${{ matrix.os }}" = "windows-latest" ]; then
             mv target/release/relay.exe target/release/relay${{ matrix.suffix }}
           else
             mv target/release/relay target/release/relay${{ matrix.suffix }}
