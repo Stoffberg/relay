@@ -18,21 +18,28 @@ interface ModelSelectorProps {
   currentModel: string | null | undefined;
 }
 
-export const ModelSelector = memo(function ModelSelector({ sessionId, currentModel }: ModelSelectorProps) {
+export const ModelSelector = memo(function ModelSelector({
+  sessionId,
+  currentModel,
+}: ModelSelectorProps) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const { getConnection } = useSpacetimeDB();
 
   const displayModel = currentModel || DEFAULT_MODEL;
-  const shortLabel = MODELS.find(m => m.id === displayModel)?.label || displayModel.split("/").pop() || "model";
+  const shortLabel =
+    MODELS.find((m) => m.id === displayModel)?.label || displayModel.split("/").pop() || "model";
 
-  const selectModel = useCallback((modelId: string) => {
-    const conn = getConnection() as DbConnection | null;
-    if (!conn) return;
-    const value = modelId === DEFAULT_MODEL ? undefined : modelId;
-    conn.reducers.updateSessionModel({ sessionId, model: value });
-    setOpen(false);
-  }, [sessionId, getConnection]);
+  const selectModel = useCallback(
+    (modelId: string) => {
+      const conn = getConnection() as DbConnection | null;
+      if (!conn) return;
+      const value = modelId === DEFAULT_MODEL ? undefined : modelId;
+      conn.reducers.updateSessionModel({ sessionId, model: value });
+      setOpen(false);
+    },
+    [sessionId, getConnection]
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -54,16 +61,27 @@ export const ModelSelector = memo(function ModelSelector({ sessionId, currentMod
     <div ref={ref} className="relative">
       <button
         type="button"
-        onClick={() => setOpen(prev => !prev)}
+        onClick={() => setOpen((prev) => !prev)}
         className="text-[10px] font-mono text-dim hover:text-muted transition-colors flex items-center gap-1"
         aria-label="Select model"
       >
         {shortLabel}
-        <svg width="8" height="8" viewBox="0 0 8 8" fill="none"><path d="M2 3l2 2 2-2" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round"/></svg>
+        <svg aria-hidden="true" width="8" height="8" viewBox="0 0 8 8" fill="none">
+          <path
+            d="M2 3l2 2 2-2"
+            stroke="currentColor"
+            strokeWidth="1"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
       </button>
       {open && (
-        <div className="absolute right-0 top-full mt-1 z-50 py-1 min-w-[200px] bg-cmd border border-border rounded-[6px] animate-scale-in" style={{ boxShadow: "0 8px 24px rgba(0,0,0,0.3)" }}>
-          {MODELS.map(m => (
+        <div
+          className="absolute right-0 top-full mt-1 z-50 py-1 min-w-[200px] bg-cmd border border-border rounded-[6px] animate-scale-in"
+          style={{ boxShadow: "0 8px 24px rgba(0,0,0,0.3)" }}
+        >
+          {MODELS.map((m) => (
             <button
               key={m.id}
               type="button"

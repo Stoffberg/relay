@@ -7,7 +7,7 @@
   },
   "files": {
     "ignoreUnknown": false,
-    "ignore": ["node_modules", "dist", "build", "target", ".next"]
+    "ignore": ["node_modules", "dist", "build", "target", ".next", "apps/web/src/routeTree.gen.ts"]
   },
   "formatter": {
     "enabled": true,
@@ -17,7 +17,7 @@
     "lineEnding": "lf",
     "lineWidth": 100,
     "attributePosition": "auto",
-    "ignore": ["node_modules", "dist", "build", "target"]
+    "ignore": ["node_modules", "dist", "build", "target", "apps/web/src/routeTree.gen.ts"]
   },
   "organizeImports": {
     "enabled": true
@@ -32,10 +32,9 @@
       "suspicious": {
         "noCommentText": "off"
       },
-      "style": {
-      }
+      "style": {}
     },
-    "ignore": ["node_modules", "dist", "build", "target"]
+    "ignore": ["node_modules", "dist", "build", "target", "apps/web/src/routeTree.gen.ts"]
   },
   "javascript": {
     "formatter": {

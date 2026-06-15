@@ -33,7 +33,7 @@ export function InputBar({
   function handleChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
     onInputChange(e.target.value);
     e.target.style.height = "auto";
-    e.target.style.height = Math.min(e.target.scrollHeight, 120) + "px";
+    e.target.style.height = `${Math.min(e.target.scrollHeight, 120)}px`;
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -45,7 +45,7 @@ export function InputBar({
 
   return (
     <div className="shrink-0 px-3 py-2 md:px-5 md:py-3 border-t border-border">
-        <div className="max-w-[1060px] mx-auto">
+      <div className="max-w-[1060px] mx-auto">
         <div className="flex items-end gap-2 bg-surface border border-border rounded-[8px] px-[14px] py-[10px]">
           <textarea
             key={sessionId}
@@ -55,7 +55,9 @@ export function InputBar({
             value={input}
             onChange={handleChange}
             onKeyDown={handleKeyDown}
-            placeholder={!ready ? "Connecting..." : showThinking ? "Send another message..." : "Message..."}
+            placeholder={
+              !ready ? "Connecting..." : showThinking ? "Send another message..." : "Message..."
+            }
             disabled={disabled}
             maxLength={100000}
             rows={1}
@@ -69,7 +71,7 @@ export function InputBar({
                 aria-label="Stop generation"
                 className="transition-all text-danger hover:text-danger/80"
               >
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none">
                   <rect x="3" y="3" width="10" height="10" rx="1" fill="currentColor" />
                 </svg>
               </button>
@@ -85,8 +87,14 @@ export function InputBar({
                   aria-label="Send message"
                   className="transition-all text-accent disabled:opacity-40"
                 >
-                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                    <path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                  <svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none">
+                    <path
+                      d="M3 8h10M9 4l4 4-4 4"
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
                   </svg>
                 </button>
               </>

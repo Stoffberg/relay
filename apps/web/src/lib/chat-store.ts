@@ -43,9 +43,11 @@ export function buildChatMessages(
   commands: readonly ToolCommand[],
   results: readonly ToolResult[],
   sessionId: string,
-  optimisticMessages: ChatMessage[],
+  optimisticMessages: ChatMessage[]
 ): ChatMessage[] {
-  const sessionMessages = [...messages.filter(m => m.sessionId === sessionId && m.role !== "explore")];
+  const sessionMessages = [
+    ...messages.filter((m) => m.sessionId === sessionId && m.role !== "explore"),
+  ];
   sessionMessages.sort((a, b) => extractTimestamp(a.createdAt) - extractTimestamp(b.createdAt));
 
   const partsByMessage = new Map<string, MessagePart[]>();
@@ -77,12 +79,12 @@ export function buildChatMessages(
     toolCallsByMessage.set(cmd.messageId, existing);
   }
 
-  const dbMessageIds = new Set(sessionMessages.map(m => m.id));
+  const dbMessageIds = new Set(sessionMessages.map((m) => m.id));
 
-  const chatMessages: ChatMessage[] = sessionMessages.map(m => {
+  const chatMessages: ChatMessage[] = sessionMessages.map((m) => {
     const msgParts = partsByMessage.get(m.id) || [];
     msgParts.sort((a, b) => a.partIndex - b.partIndex);
-    const content = msgParts.map(p => p.content).join("");
+    const content = msgParts.map((p) => p.content).join("");
     const toolCalls = toolCallsByMessage.get(m.id);
     return {
       id: m.id,
@@ -109,8 +111,31 @@ export function buildChatMessages(
 function buildSegments(msg: ChatMessage): MessageSegment[] {
   const segs: MessageSegment[] = [];
   if (msg.content) segs.push({ type: "text", content: msg.content });
-  if (msg.toolCalls && msg.toolCalls.length > 0) segs.push({ type: "tool_calls", calls: msg.toolCalls });
+  if (msg.toolCalls && msg.toolCalls.length > 0)
+    segs.push({ type: "tool_calls", calls: msg.toolCalls });
   return segs;
+}
+
+function mergeAssistantMessages(prev: ChatMessage, msg: ChatMessage): ChatMessage {
+  const segments = [...(prev.segments || []), ...buildSegments(msg)];
+  const textSegments = segments.filter(
+    (segment): segment is MessageSegment & { type: "text" } => segment.type === "text"
+  );
+  const toolCallSegments = segments.filter(
+    (segment): segment is MessageSegment & { type: "tool_calls" } => segment.type === "tool_calls"
+  );
+  const toolCalls = toolCallSegments.flatMap((segment) => segment.calls);
+
+  return {
+    ...prev,
+    segments,
+    content: textSegments.map((segment) => segment.content).join("\n\n"),
+    toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+    promptTokens: (prev.promptTokens ?? 0) + (msg.promptTokens ?? 0),
+    completionTokens: (prev.completionTokens ?? 0) + (msg.completionTokens ?? 0),
+    status: msg.status,
+    createdAt: msg.createdAt ?? prev.createdAt,
+  };
 }
 
 function groupConsecutiveAssistantMessages(messages: ChatMessage[]): ChatMessage[] {
@@ -124,27 +149,7 @@ function groupConsecutiveAssistantMessages(messages: ChatMessage[]): ChatMessage
 
     const prev = grouped.at(-1);
     if (prev && prev.role === "assistant") {
-      const newSegments = buildSegments(msg);
-      const merged = { ...prev };
-      merged.segments = [...(prev.segments || []), ...newSegments];
-
-      const allContent = (merged.segments)
-        .filter((s): s is MessageSegment & { type: "text" } => s.type === "text")
-        .map(s => s.content)
-        .join("\n\n");
-      merged.content = allContent;
-
-      const allCalls = (merged.segments)
-        .filter((s): s is MessageSegment & { type: "tool_calls" } => s.type === "tool_calls")
-        .flatMap(s => s.calls);
-      merged.toolCalls = allCalls.length > 0 ? allCalls : undefined;
-
-      merged.promptTokens = (prev.promptTokens ?? 0) + (msg.promptTokens ?? 0);
-      merged.completionTokens = (prev.completionTokens ?? 0) + (msg.completionTokens ?? 0);
-
-      merged.status = msg.status;
-      merged.createdAt = msg.createdAt ?? prev.createdAt;
-      grouped[grouped.length - 1] = merged;
+      grouped[grouped.length - 1] = mergeAssistantMessages(prev, msg);
     } else {
       const initial = { ...msg };
       initial.segments = buildSegments(msg);
@@ -158,7 +163,7 @@ function groupConsecutiveAssistantMessages(messages: ChatMessage[]): ChatMessage
 export function computeStatus(
   sessionStatus: SessionStatus,
   messages: ChatMessage[],
-  hasOptimistic: boolean,
+  hasOptimistic: boolean
 ): ChatStatus {
   const busy = sessionStatus !== "idle" || hasOptimistic;
   const lastMsg = messages.at(-1);

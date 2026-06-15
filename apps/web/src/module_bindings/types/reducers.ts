@@ -3,34 +3,34 @@
 
 /* eslint-disable */
 /* tslint:disable */
-import { type Infer as __Infer } from "spacetimedb";
+import type { Infer as __Infer } from "spacetimedb";
 
 // Import all reducer arg schemas
-import AgentDisconnectReducer from "../agent_disconnect_reducer";
-import AgentHeartbeatReducer from "../agent_heartbeat_reducer";
-import AppendMessagePartReducer from "../append_message_part_reducer";
-import ArchiveSessionReducer from "../archive_session_reducer";
-import CleanupOldSessionsReducer from "../cleanup_old_sessions_reducer";
-import CompleteMessageReducer from "../complete_message_reducer";
-import CreateSessionReducer from "../create_session_reducer";
-import CreateToolCommandReducer from "../create_tool_command_reducer";
-import CreateToolResultReducer from "../create_tool_result_reducer";
-import CreateVerificationReducer from "../create_verification_reducer";
-import DeleteMessageReducer from "../delete_message_reducer";
-import DeleteSessionReducer from "../delete_session_reducer";
-import FailMessageReducer from "../fail_message_reducer";
-import FinalizeToolCommandReducer from "../finalize_tool_command_reducer";
-import ReapStaleAgentsReducer from "../reap_stale_agents_reducer";
-import RegisterAgentReducer from "../register_agent_reducer";
-import SendMessageReducer from "../send_message_reducer";
-import SetMessageTokensReducer from "../set_message_tokens_reducer";
-import UpdateMessageContentReducer from "../update_message_content_reducer";
-import UpdateSessionModelReducer from "../update_session_model_reducer";
-import UpdateSessionStatusReducer from "../update_session_status_reducer";
-import UpdateSessionSystemPromptReducer from "../update_session_system_prompt_reducer";
-import UpdateSessionTitleReducer from "../update_session_title_reducer";
-import UpdateToolCommandArgsReducer from "../update_tool_command_args_reducer";
-import UpdateToolCommandStatusReducer from "../update_tool_command_status_reducer";
+import type AgentDisconnectReducer from "../agent_disconnect_reducer";
+import type AgentHeartbeatReducer from "../agent_heartbeat_reducer";
+import type AppendMessagePartReducer from "../append_message_part_reducer";
+import type ArchiveSessionReducer from "../archive_session_reducer";
+import type CleanupOldSessionsReducer from "../cleanup_old_sessions_reducer";
+import type CompleteMessageReducer from "../complete_message_reducer";
+import type CreateSessionReducer from "../create_session_reducer";
+import type CreateToolCommandReducer from "../create_tool_command_reducer";
+import type CreateToolResultReducer from "../create_tool_result_reducer";
+import type CreateVerificationReducer from "../create_verification_reducer";
+import type DeleteMessageReducer from "../delete_message_reducer";
+import type DeleteSessionReducer from "../delete_session_reducer";
+import type FailMessageReducer from "../fail_message_reducer";
+import type FinalizeToolCommandReducer from "../finalize_tool_command_reducer";
+import type ReapStaleAgentsReducer from "../reap_stale_agents_reducer";
+import type RegisterAgentReducer from "../register_agent_reducer";
+import type SendMessageReducer from "../send_message_reducer";
+import type SetMessageTokensReducer from "../set_message_tokens_reducer";
+import type UpdateMessageContentReducer from "../update_message_content_reducer";
+import type UpdateSessionModelReducer from "../update_session_model_reducer";
+import type UpdateSessionStatusReducer from "../update_session_status_reducer";
+import type UpdateSessionSystemPromptReducer from "../update_session_system_prompt_reducer";
+import type UpdateSessionTitleReducer from "../update_session_title_reducer";
+import type UpdateToolCommandArgsReducer from "../update_tool_command_args_reducer";
+import type UpdateToolCommandStatusReducer from "../update_tool_command_status_reducer";
 
 export type AgentDisconnectParams = __Infer<typeof AgentDisconnectReducer>;
 export type AgentHeartbeatParams = __Infer<typeof AgentHeartbeatReducer>;
@@ -57,4 +57,3 @@ export type UpdateSessionSystemPromptParams = __Infer<typeof UpdateSessionSystem
 export type UpdateSessionTitleParams = __Infer<typeof UpdateSessionTitleReducer>;
 export type UpdateToolCommandArgsParams = __Infer<typeof UpdateToolCommandArgsReducer>;
 export type UpdateToolCommandStatusParams = __Infer<typeof UpdateToolCommandStatusReducer>;
-

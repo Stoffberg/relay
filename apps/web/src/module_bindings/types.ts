@@ -4,10 +4,10 @@
 /* eslint-disable */
 /* tslint:disable */
 import {
-  TypeBuilder as __TypeBuilder,
-  t as __t,
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
+  TypeBuilder as __TypeBuilder,
+  t as __t,
 } from "spacetimedb";
 
 export const Agent = __t.object("Agent", {
@@ -92,4 +92,3 @@ export const Verification = __t.object("Verification", {
   createdAt: __t.timestamp(),
 });
 export type Verification = __Infer<typeof Verification>;
-

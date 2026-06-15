@@ -13,11 +13,7 @@ export interface Message {
   created_at: number;
 }
 
-export type MessagePartType =
-  | "text"
-  | "tool_call"
-  | "tool_result"
-  | "reasoning";
+export type MessagePartType = "text" | "tool_call" | "tool_result" | "reasoning";
 
 export interface MessagePart {
   id: string;
@@ -34,13 +30,7 @@ export interface ToolCommand {
   session_id: string;
   message_id: string;
   agent_id: string;
-  command_type:
-    | "file_read"
-    | "file_write"
-    | "file_edit"
-    | "shell_exec"
-    | "glob"
-    | "grep";
+  command_type: "file_read" | "file_write" | "file_edit" | "shell_exec" | "glob" | "grep";
   payload_json: string;
   status: "pending" | "running" | "completed" | "error";
   created_at: number;

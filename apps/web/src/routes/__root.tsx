@@ -7,15 +7,22 @@ import {
   useRouterState,
 } from "@tanstack/react-router";
 import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import appCss from "../styles.css?url";
-import { DbConnection, tables, extractTimestamp } from "../spacetime";
-import type { Session } from "../spacetime";
 import { SpacetimeDBProvider, useSpacetimeDB } from "spacetimedb/react";
-import { ThemeProvider } from "../hooks/use-theme";
-import { Sidebar, type SessionPreview } from "../components/sidebar";
+import { type SessionPreview, Sidebar } from "../components/sidebar";
 import { ToastContainer } from "../components/toast";
-import { useRows, useSubscriptionReady, markSubscriptionReady, resetSubscriptionReady } from "../hooks/use-rows";
-const CommandPalette = React.lazy(() => import("../components/command-palette").then(m => ({ default: m.CommandPalette })));
+import {
+  markSubscriptionReady,
+  resetSubscriptionReady,
+  useRows,
+  useSubscriptionReady,
+} from "../hooks/use-rows";
+import { ThemeProvider } from "../hooks/use-theme";
+import { DbConnection, extractTimestamp, tables } from "../spacetime";
+import type { Session } from "../spacetime";
+import appCss from "../styles.css?url";
+const CommandPalette = React.lazy(() =>
+  import("../components/command-palette").then((m) => ({ default: m.CommandPalette }))
+);
 
 const SPACETIME_URL = import.meta.env.VITE_SPACETIME_URL || "wss://maincloud.spacetimedb.com";
 const SPACETIME_DB_NAME = import.meta.env.VITE_SPACETIME_DB_NAME || "relay";
@@ -32,9 +39,15 @@ export const Route = createRootRoute({
     links: [
       { rel: "preconnect", href: "https://fonts.googleapis.com" },
       { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
-      { rel: "stylesheet", href: "https://fonts.googleapis.com/css2?family=Figtree:ital,wght@0,300..900;1,300..900&family=JetBrains+Mono:ital,wght@0,300;0,400;0,500;1,300;1,400&display=swap" },
+      {
+        rel: "stylesheet",
+        href: "https://fonts.googleapis.com/css2?family=Figtree:ital,wght@0,300..900;1,300..900&family=JetBrains+Mono:ital,wght@0,300;0,400;0,500;1,300;1,400&display=swap",
+      },
       { rel: "stylesheet", href: appCss },
-      { rel: "icon", href: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>" },
+      {
+        rel: "icon",
+        href: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>",
+      },
       { rel: "manifest", href: "/manifest.json" },
     ],
   }),
@@ -49,7 +62,7 @@ function RootShell({ children }: { children: React.ReactNode }) {
     <html lang="en">
       <head>
         <HeadContent />
-        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+        <script>{themeScript}</script>
       </head>
       <body>
         {children}
@@ -69,15 +82,13 @@ function createConnectionBuilder() {
         localStorage.setItem("spacetimedb-token", token);
       }
       const ot = localStorage.getItem("relay-owner-token") || "";
-      conn.subscriptionBuilder()
+      conn
+        .subscriptionBuilder()
         .onApplied(() => {
           console.log("[relay] base subscriptions applied");
           markSubscriptionReady();
         })
-        .subscribe([
-          `SELECT * FROM session WHERE owner_token = '${ot}'`,
-          "SELECT * FROM agent",
-        ]);
+        .subscribe([`SELECT * FROM session WHERE owner_token = '${ot}'`, "SELECT * FROM agent"]);
     })
     .onConnectError((_ctx, error) => {
       console.error("[relay] connection error:", error);
@@ -91,12 +102,15 @@ function createConnectionBuilder() {
 function RootComponent() {
   const [connectionKey, setConnectionKey] = useState(0);
   const [mounted, setMounted] = useState(true);
-  const builder = useMemo(() => createConnectionBuilder(), [connectionKey]);
+  const builder = useMemo(() => {
+    if (connectionKey < 0) return createConnectionBuilder();
+    return createConnectionBuilder();
+  }, [connectionKey]);
 
   useEffect(() => {
     if (!mounted) {
       const timer = setTimeout(() => {
-        setConnectionKey(k => k + 1);
+        setConnectionKey((k) => k + 1);
         setMounted(true);
       }, 50);
       return () => clearTimeout(timer);
@@ -126,7 +140,9 @@ function ReconnectingShell() {
   return (
     <div className="flex h-screen items-center justify-center bg-background text-foreground font-sans">
       <div className="text-center">
-        <div className="text-sm" style={{ color: "var(--dim)" }}>Reconnecting...</div>
+        <div className="text-sm" style={{ color: "var(--dim)" }}>
+          Reconnecting...
+        </div>
       </div>
     </div>
   );
@@ -135,7 +151,10 @@ function ReconnectingShell() {
 const MAX_RECONNECT_DELAY = 30000;
 const BASE_RECONNECT_DELAY = 1000;
 
-function ReconnectWrapper({ onReconnect, children }: { onReconnect: () => void; children: React.ReactNode }) {
+function ReconnectWrapper({
+  onReconnect,
+  children,
+}: { onReconnect: () => void; children: React.ReactNode }) {
   const { isActive } = useSpacetimeDB();
   const retryCountRef = useRef(0);
   const wasConnectedRef = useRef(false);
@@ -198,11 +217,12 @@ function RootInner() {
     wasEverConnected.current = true;
   }
 
-  const connState: "connected" | "connecting" | "reconnecting" = isActive && subscriptionReady
-    ? "connected"
-    : wasEverConnected.current
-      ? "reconnecting"
-      : "connecting";
+  const connState: "connected" | "connecting" | "reconnecting" =
+    isActive && subscriptionReady
+      ? "connected"
+      : wasEverConnected.current
+        ? "reconnecting"
+        : "connecting";
 
   const [ownerToken] = useState(() => {
     if (typeof window === "undefined") return "";
@@ -215,13 +235,16 @@ function RootInner() {
   });
 
   const sessions = useMemo(() => {
-    const filtered = (allSessions as Session[]).filter(s => s.ownerToken === ownerToken);
+    const filtered = (allSessions as Session[]).filter((s) => s.ownerToken === ownerToken);
     const previews = filtered.map(buildSessionPreview);
     previews.sort((a, b) => b.updatedAt - a.updatedAt);
     return previews;
   }, [allSessions, ownerToken]);
 
-  const hasOnlineAgent = useMemo(() => allAgents.some(a => a.status === "online" && a.ownerToken === ownerToken), [allAgents, ownerToken]);
+  const hasOnlineAgent = useMemo(
+    () => allAgents.some((a) => a.status === "online" && a.ownerToken === ownerToken),
+    [allAgents, ownerToken]
+  );
 
   const [showCmd, setShowCmd] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
@@ -229,13 +252,15 @@ function RootInner() {
     return localStorage.getItem("relay-sidebar-collapsed") === "true";
   });
   const toggleSidebar = useCallback(() => {
-    setSidebarCollapsed(prev => {
+    setSidebarCollapsed((prev) => {
       const next = !prev;
       localStorage.setItem("relay-sidebar-collapsed", String(next));
       return next;
     });
   }, []);
-  const [isMobile, setIsMobile] = useState(() => typeof window !== "undefined" && window.innerWidth < 768);
+  const [isMobile, setIsMobile] = useState(
+    () => typeof window !== "undefined" && window.innerWidth < 768
+  );
   useEffect(() => {
     let timeout: ReturnType<typeof setTimeout>;
     const check = () => {
@@ -252,7 +277,9 @@ function RootInner() {
   const routerState = useRouterState();
   const currentPath = routerState.location.pathname;
 
-  const activeSessionId = currentPath.startsWith("/chat/") ? currentPath.replace("/chat/", "") : null;
+  const activeSessionId = currentPath.startsWith("/chat/")
+    ? currentPath.replace("/chat/", "")
+    : null;
   const hasChatOpen = activeSessionId !== null;
   const isFullscreenRoute = currentPath === "/settings";
 
@@ -286,7 +313,9 @@ function RootInner() {
         setShowCmd(false);
       }
     }
-    function onToggleSidebar() { toggleSidebar(); }
+    function onToggleSidebar() {
+      toggleSidebar();
+    }
     window.addEventListener("keydown", onKey);
     window.addEventListener("relay:toggle-sidebar", onToggleSidebar);
     return () => {
@@ -301,29 +330,42 @@ function RootInner() {
 
   return (
     <>
-      <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:z-[100] focus:top-2 focus:left-2 focus:px-3 focus:py-2 focus:bg-surface focus:text-foreground focus:rounded-md">
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:absolute focus:z-[100] focus:top-2 focus:left-2 focus:px-3 focus:py-2 focus:bg-surface focus:text-foreground focus:rounded-md"
+      >
         Skip to content
       </a>
       <div className="flex h-screen overflow-hidden bg-background text-foreground font-sans">
-        {!isFullscreenRoute && (!isMobile || !hasChatOpen) && <Sidebar
-          sessions={sessions}
-          activeSessionId={activeSessionId}
-          connState={connState}
-          hasChatOpen={hasChatOpen}
-          hasOnlineAgent={hasOnlineAgent}
-          collapsed={sidebarCollapsed}
-          onToggleCollapse={toggleSidebar}
-          onSelectChat={selectChat}
-          onNewChat={startNewChat}
-        />}
-        {(!isMobile || hasChatOpen || isFullscreenRoute) && <main id="main-content" className="flex-1 flex flex-col min-w-0">
-          <Outlet />
-        </main>}
+        {!isFullscreenRoute && (!isMobile || !hasChatOpen) && (
+          <Sidebar
+            sessions={sessions}
+            activeSessionId={activeSessionId}
+            connState={connState}
+            hasChatOpen={hasChatOpen}
+            hasOnlineAgent={hasOnlineAgent}
+            collapsed={sidebarCollapsed}
+            onToggleCollapse={toggleSidebar}
+            onSelectChat={selectChat}
+            onNewChat={startNewChat}
+          />
+        )}
+        {(!isMobile || hasChatOpen || isFullscreenRoute) && (
+          <main id="main-content" className="flex-1 flex flex-col min-w-0">
+            <Outlet />
+          </main>
+        )}
         {showCmd && (
           <Suspense fallback={null}>
             <CommandPalette
-              onNewChat={() => { startNewChat(); setShowCmd(false); }}
-              onSettings={() => { navigate({ to: "/settings" }); setShowCmd(false); }}
+              onNewChat={() => {
+                startNewChat();
+                setShowCmd(false);
+              }}
+              onSettings={() => {
+                navigate({ to: "/settings" });
+                setShowCmd(false);
+              }}
               onClose={() => setShowCmd(false)}
             />
           </Suspense>

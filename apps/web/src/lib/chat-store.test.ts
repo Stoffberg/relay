@@ -1,26 +1,31 @@
-import { describe, it, expect } from "vitest";
-import {
-  buildChatMessages,
-  computeStatus,
-  type ChatMessage,
-} from "./chat-store";
+import { describe, expect, it } from "vitest";
+import type { Message, MessagePart, ToolCommand, ToolResult } from "../spacetime";
+import { type ChatMessage, buildChatMessages, computeStatus } from "./chat-store";
+
+const timestamp = { __timestamp_micros_since_unix_epoch__: 0n };
 
 function makeMessage(
   id: string,
   sessionId: string,
   role: string,
   status: string,
-  createdAt: number,
-) {
-  return { id, sessionId, role, status, createdAt, userId: null, error: null } as any;
+  createdAt: number
+): Message {
+  return {
+    id,
+    sessionId,
+    role,
+    status,
+    createdAt,
+    userId: null,
+    error: null,
+    promptTokens: null,
+    completionTokens: null,
+  } as unknown as Message;
 }
 
-function makePart(
-  messageId: string,
-  partIndex: number,
-  content: string,
-) {
-  return { id: BigInt(0), messageId, partIndex, content, createdAt: 0 } as any;
+function makePart(messageId: string, partIndex: number, content: string): MessagePart {
+  return { id: 0n, messageId, partIndex, content, createdAt: timestamp } as unknown as MessagePart;
 }
 
 function makeCommand(
@@ -29,8 +34,8 @@ function makeCommand(
   sessionId: string,
   toolName: string,
   toolArgs: string,
-  status: string,
-) {
+  status: string
+): ToolCommand {
   return {
     id: BigInt(id),
     toolCallId: `tc-${id}`,
@@ -40,25 +45,30 @@ function makeCommand(
     toolName,
     toolArgs,
     status,
-    createdAt: 0,
-    updatedAt: 0,
-  } as any;
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  } as unknown as ToolCommand;
 }
 
 function makeResult(
   toolCommandId: number,
   success: boolean,
   output: string,
-  error: string | null = null,
-) {
+  error: string | null = null
+): ToolResult {
   return {
-    id: BigInt(0),
+    id: 0n,
     toolCommandId: BigInt(toolCommandId),
     success,
     output,
-    error,
-    createdAt: 0,
-  } as any;
+    error: error ?? undefined,
+    createdAt: timestamp,
+  } as unknown as ToolResult;
+}
+
+function requireToolCalls(message: ChatMessage): NonNullable<ChatMessage["toolCalls"]> {
+  expect(message.toolCalls).toBeDefined();
+  return message.toolCalls ?? [];
 }
 
 describe("buildChatMessages", () => {
@@ -72,10 +82,7 @@ describe("buildChatMessages", () => {
       makeMessage("m1", "session-1", "user", "complete", 1000),
       makeMessage("m2", "session-2", "user", "complete", 2000),
     ];
-    const parts = [
-      makePart("m1", 0, "hello"),
-      makePart("m2", 0, "other"),
-    ];
+    const parts = [makePart("m1", 0, "hello"), makePart("m2", 0, "other")];
     const result = buildChatMessages(messages, parts, [], [], "session-1", []);
     expect(result).toHaveLength(1);
     expect(result[0].id).toBe("m1");
@@ -105,15 +112,14 @@ describe("buildChatMessages", () => {
 
   it("attaches tool calls with results to messages", () => {
     const messages = [makeMessage("m1", "s1", "assistant", "complete", 1000)];
-    const commands = [
-      makeCommand(1, "m1", "s1", "file_read", '{"path":"/tmp"}', "completed"),
-    ];
+    const commands = [makeCommand(1, "m1", "s1", "file_read", '{"path":"/tmp"}', "completed")];
     const results = [makeResult(1, true, "file contents")];
     const result = buildChatMessages(messages, [], commands, results, "s1", []);
     expect(result[0].toolCalls).toHaveLength(1);
-    expect(result[0].toolCalls![0].toolName).toBe("file_read");
-    expect(result[0].toolCalls![0].output).toBe("file contents");
-    expect(result[0].toolCalls![0].success).toBe(true);
+    const toolCalls = requireToolCalls(result[0]);
+    expect(toolCalls[0].toolName).toBe("file_read");
+    expect(toolCalls[0].output).toBe("file contents");
+    expect(toolCalls[0].success).toBe(true);
   });
 
   it("includes optimistic messages not yet in DB", () => {
@@ -173,10 +179,7 @@ describe("buildChatMessages", () => {
       makeMessage("u1", "s1", "user", "complete", 2000),
       makeMessage("a2", "s1", "assistant", "complete", 3000),
     ];
-    const parts = [
-      makePart("a1", 0, "first"),
-      makePart("a2", 0, "second"),
-    ];
+    const parts = [makePart("a1", 0, "first"), makePart("a2", 0, "second")];
     const result = buildChatMessages(messages, parts, [], [], "s1", []);
     expect(result).toHaveLength(3);
     expect(result[0].content).toBe("first");
@@ -193,20 +196,26 @@ describe("buildChatMessages", () => {
       makeCommand(1, "a1", "s1", "file_read", '{"path":"/a"}', "completed"),
       makeCommand(2, "a2", "s1", "glob", '{"pattern":"*.ts"}', "completed"),
     ];
-    const results = [
-      makeResult(1, true, "content of a"),
-      makeResult(2, true, "found files"),
-    ];
+    const results = [makeResult(1, true, "content of a"), makeResult(2, true, "found files")];
     const result = buildChatMessages(messages, [], commands, results, "s1", []);
     expect(result).toHaveLength(2);
     expect(result[1].toolCalls).toHaveLength(2);
-    expect(result[1].toolCalls![0].toolName).toBe("file_read");
-    expect(result[1].toolCalls![1].toolName).toBe("glob");
+    const toolCalls = requireToolCalls(result[1]);
+    expect(toolCalls[0].toolName).toBe("file_read");
+    expect(toolCalls[1].toolName).toBe("glob");
   });
 
   it("sums token counts across grouped assistant messages", () => {
-    const m1 = { ...makeMessage("a1", "s1", "assistant", "complete", 1000), completionTokens: 100, promptTokens: 500 };
-    const m2 = { ...makeMessage("a2", "s1", "assistant", "complete", 2000), completionTokens: 200, promptTokens: 600 };
+    const m1 = {
+      ...makeMessage("a1", "s1", "assistant", "complete", 1000),
+      completionTokens: 100n,
+      promptTokens: 500n,
+    };
+    const m2 = {
+      ...makeMessage("a2", "s1", "assistant", "complete", 2000),
+      completionTokens: 200n,
+      promptTokens: 600n,
+    };
     const result = buildChatMessages([m1, m2], [], [], [], "s1", []);
     expect(result).toHaveLength(1);
     expect(result[0].completionTokens).toBe(300);
@@ -228,9 +237,7 @@ describe("buildChatMessages", () => {
       makeMessage("a1", "s1", "assistant", "complete", 1000),
       makeMessage("a2", "s1", "assistant", "complete", 2000),
     ];
-    const parts = [
-      makePart("a2", 0, "only second has content"),
-    ];
+    const parts = [makePart("a2", 0, "only second has content")];
     const result = buildChatMessages(messages, parts, [], [], "s1", []);
     expect(result).toHaveLength(1);
     expect(result[0].content).toBe("only second has content");

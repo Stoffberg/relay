@@ -1,15 +1,28 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSpacetimeDB } from "spacetimedb/react";
-import { tables } from "../spacetime";
-import type { DbConnection, Session, Message, MessagePart, ToolCommand, ToolResult, Verification } from "../spacetime";
+import { InputBar } from "../components/input-bar";
+import { MessageRow, ThinkingIndicator } from "../components/message-row";
 import { ModelSelector } from "../components/model-selector";
 import { SystemPromptEditor } from "../components/system-prompt-editor";
-import { buildChatMessages, computeStatus, type ChatMessage, type SessionStatus } from "../lib/chat-store";
-import { MessageRow, ThinkingIndicator } from "../components/message-row";
-import { InputBar } from "../components/input-bar";
 import { useRows, useSubscriptionReady } from "../hooks/use-rows";
+import {
+  type ChatMessage,
+  type SessionStatus,
+  buildChatMessages,
+  computeStatus,
+} from "../lib/chat-store";
+import { tables } from "../spacetime";
+import type {
+  DbConnection,
+  Message,
+  MessagePart,
+  Session,
+  ToolCommand,
+  ToolResult,
+  Verification,
+} from "../spacetime";
 
 type SubscriptionHandle = { unsubscribe(): void; isEnded(): boolean };
 
@@ -21,7 +34,9 @@ export const Route = createFileRoute("/chat/$sessionId")({
     <div className="flex items-center justify-center h-full">
       <div className="text-center max-w-sm">
         <p className="text-[15px] font-medium text-body">Something went wrong</p>
-        <p className="text-[13px] text-muted mt-2">{error?.message ?? "An unexpected error occurred"}</p>
+        <p className="text-[13px] text-muted mt-2">
+          {error?.message ?? "An unexpected error occurred"}
+        </p>
         <button
           type="button"
           onClick={() => window.location.reload()}
@@ -64,7 +79,8 @@ function ChatPage() {
     if (!conn || !isActive || !subscriptionReady) return;
 
     setSessionSubReady(false);
-    const handle: SubscriptionHandle = conn.subscriptionBuilder()
+    const handle: SubscriptionHandle = conn
+      .subscriptionBuilder()
       .onApplied(() => {
         console.log(`[relay] session subscription applied: ${sessionId}`);
         setSessionSubReady(true);
@@ -101,7 +117,7 @@ function ChatPage() {
 
   const currentSession = useMemo(
     () => (allSessions as Session[]).find((s) => s.id === sessionId),
-    [allSessions, sessionId],
+    [allSessions, sessionId]
   );
   const sessionStatus: SessionStatus = (currentSession?.status as SessionStatus) || "idle";
   const sessionTitle = currentSession?.title || "New conversation";
@@ -112,8 +128,16 @@ function ChatPage() {
   const [optimisticMessages, setOptimisticMessages] = useState<ChatMessage[]>([]);
 
   const chatMessages = useMemo(
-    () => buildChatMessages(allMessages as Message[], allParts as MessagePart[], allCommands as ToolCommand[], allResults as ToolResult[], sessionId, optimisticMessages),
-    [allMessages, allParts, allCommands, allResults, sessionId, optimisticMessages],
+    () =>
+      buildChatMessages(
+        allMessages as Message[],
+        allParts as MessagePart[],
+        allCommands as ToolCommand[],
+        allResults as ToolResult[],
+        sessionId,
+        optimisticMessages
+      ),
+    [allMessages, allParts, allCommands, allResults, sessionId, optimisticMessages]
   );
 
   const verificationsByMessageId = useMemo(() => {
@@ -129,12 +153,14 @@ function ChatPage() {
   const hasOptimistic = optimisticMessages.length > 0;
   const { showThinking, sessionStatus: computedSessionStatus } = useMemo(
     () => computeStatus(sessionStatus, chatMessages, hasOptimistic),
-    [sessionStatus, chatMessages, hasOptimistic],
+    [sessionStatus, chatMessages, hasOptimistic]
   );
 
   useEffect(() => {
-    const confirmedIds = new Set((allMessages as Message[]).filter(m => m.sessionId === sessionId).map(m => m.id));
-    setOptimisticMessages(prev => prev.filter(opt => !confirmedIds.has(opt.id)));
+    const confirmedIds = new Set(
+      (allMessages as Message[]).filter((m) => m.sessionId === sessionId).map((m) => m.id)
+    );
+    setOptimisticMessages((prev) => prev.filter((opt) => !confirmedIds.has(opt.id)));
   }, [allMessages, sessionId]);
 
   const tokenTotals = useMemo(() => {
@@ -170,7 +196,7 @@ function ChatPage() {
   }, []);
 
   useEffect(() => {
-    if (userNearBottomRef.current) {
+    if (chatMessages.length > 0 && userNearBottomRef.current) {
       scrollToBottom();
     }
   }, [chatMessages.length, scrollToBottom]);
@@ -187,6 +213,7 @@ function ChatPage() {
   const [searchIdx, setSearchIdx] = useState(0);
 
   useEffect(() => {
+    if (!sessionId) return;
     setInput("");
     setOptimisticMessages([]);
     abortRef.current?.abort();
@@ -198,8 +225,10 @@ function ChatPage() {
     const title = sessionTitle;
     const prefix = unreadRef.current && document.hidden ? "(new) " : "";
     document.title = `${prefix}${title} | Relay`;
-    return () => { document.title = "Relay"; };
-  }, [sessionTitle, chatMessages.length]);
+    return () => {
+      document.title = "Relay";
+    };
+  }, [sessionTitle]);
 
   useEffect(() => {
     if (computedSessionStatus === "idle" && chatMessages.length > 0 && document.hidden) {
@@ -233,7 +262,13 @@ function ChatPage() {
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (e.key === "/" && !e.metaKey && !e.ctrlKey && !(e.target instanceof HTMLTextAreaElement) && !(e.target instanceof HTMLInputElement)) {
+      if (
+        e.key === "/" &&
+        !e.metaKey &&
+        !e.ctrlKey &&
+        !(e.target instanceof HTMLTextAreaElement) &&
+        !(e.target instanceof HTMLInputElement)
+      ) {
         e.preventDefault();
         const el = document.querySelector<HTMLTextAreaElement>("[data-chat-input]");
         el?.focus();
@@ -243,9 +278,12 @@ function ChatPage() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  useEffect(() => () => {
-    abortRef.current?.abort();
-  }, []);
+  useEffect(
+    () => () => {
+      abortRef.current?.abort();
+    },
+    []
+  );
 
   const [otherTabActive, setOtherTabActive] = useState(false);
 
@@ -268,7 +306,10 @@ function ChatPage() {
     };
   }, [sessionId]);
 
-  const hasAgent = useMemo(() => allAgents.some(a => a.status === "online" && a.ownerToken === ownerToken), [allAgents, ownerToken]);
+  const hasAgent = useMemo(
+    () => allAgents.some((a) => a.status === "online" && a.ownerToken === ownerToken),
+    [allAgents, ownerToken]
+  );
 
   const virtualizer = useVirtualizer({
     count: chatMessages.length,
@@ -278,86 +319,89 @@ function ChatPage() {
   });
 
   const addOptimistic = useCallback((msg: ChatMessage) => {
-    setOptimisticMessages(prev => [...prev, msg]);
+    setOptimisticMessages((prev) => [...prev, msg]);
   }, []);
 
   const removeOptimistic = useCallback((id: string) => {
-    setOptimisticMessages(prev => prev.filter(m => m.id !== id));
+    setOptimisticMessages((prev) => prev.filter((m) => m.id !== id));
   }, []);
 
-  const doSend = useCallback(async (text: string) => {
-    if (!text) return;
+  const doSend = useCallback(
+    async (text: string) => {
+      if (!text) return;
 
-    const userMsgId = crypto.randomUUID();
-    setInput("");
+      const userMsgId = crypto.randomUUID();
+      setInput("");
 
-    addOptimistic({
-      id: userMsgId,
-      role: "user",
-      content: text,
-      status: "optimistic",
-    });
-    userNearBottomRef.current = true;
-    scrollToBottom(true);
-
-    const ownerToken = localStorage.getItem("relay-owner-token") || "";
-    const controller = new AbortController();
-    abortRef.current = controller;
-    try {
-      const res = await fetch(`${API_URL}/chat`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        signal: controller.signal,
-        body: JSON.stringify({
-          message: text,
-          session_id: sessionId,
-          user_message_id: userMsgId,
-          owner_token: ownerToken,
-        }),
-      });
-
-      if (!res.ok) {
-        let errorMsg = `Request failed (${res.status})`;
-        try {
-          const body = (await res.json()) as { error?: string };
-          if (body.error) errorMsg = body.error;
-        } catch {}
-        removeOptimistic(userMsgId);
-        addOptimistic({
-          id: crypto.randomUUID(),
-          role: "assistant",
-          content: `Error: ${errorMsg}`,
-          status: "error",
-          retryText: text,
-        });
-        return;
-      }
-
-      const data = (await res.json()) as { error?: string };
-      if (data.error) {
-        removeOptimistic(userMsgId);
-        addOptimistic({
-          id: crypto.randomUUID(),
-          role: "assistant",
-          content: `Error: ${data.error}`,
-          status: "error",
-          retryText: text,
-        });
-      }
-    } catch (err) {
-      if (err instanceof DOMException && err.name === "AbortError") return;
-      removeOptimistic(userMsgId);
       addOptimistic({
-        id: crypto.randomUUID(),
-        role: "assistant",
-        content: `Network error: ${String(err)}`,
-        status: "error",
-        retryText: text,
+        id: userMsgId,
+        role: "user",
+        content: text,
+        status: "optimistic",
       });
-    }
-  }, [sessionId, scrollToBottom, addOptimistic, removeOptimistic]);
+      userNearBottomRef.current = true;
+      scrollToBottom(true);
+
+      const ownerToken = localStorage.getItem("relay-owner-token") || "";
+      const controller = new AbortController();
+      abortRef.current = controller;
+      try {
+        const res = await fetch(`${API_URL}/chat`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          signal: controller.signal,
+          body: JSON.stringify({
+            message: text,
+            session_id: sessionId,
+            user_message_id: userMsgId,
+            owner_token: ownerToken,
+          }),
+        });
+
+        if (!res.ok) {
+          let errorMsg = `Request failed (${res.status})`;
+          try {
+            const body = (await res.json()) as { error?: string };
+            if (body.error) errorMsg = body.error;
+          } catch {}
+          removeOptimistic(userMsgId);
+          addOptimistic({
+            id: crypto.randomUUID(),
+            role: "assistant",
+            content: `Error: ${errorMsg}`,
+            status: "error",
+            retryText: text,
+          });
+          return;
+        }
+
+        const data = (await res.json()) as { error?: string };
+        if (data.error) {
+          removeOptimistic(userMsgId);
+          addOptimistic({
+            id: crypto.randomUUID(),
+            role: "assistant",
+            content: `Error: ${data.error}`,
+            status: "error",
+            retryText: text,
+          });
+        }
+      } catch (err) {
+        if (err instanceof DOMException && err.name === "AbortError") return;
+        removeOptimistic(userMsgId);
+        addOptimistic({
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content: `Network error: ${String(err)}`,
+          status: "error",
+          retryText: text,
+        });
+      }
+    },
+    [sessionId, scrollToBottom, addOptimistic, removeOptimistic]
+  );
 
   const sendMessage = useCallback(() => {
     doSend(input.trim());
@@ -367,8 +411,11 @@ function ChatPage() {
     fetch(`${API_URL}/stop`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ session_id: sessionId, owner_token: localStorage.getItem("relay-owner-token") || "" }),
-    }).catch(err => console.error("[relay] stop request failed:", err));
+      body: JSON.stringify({
+        session_id: sessionId,
+        owner_token: localStorage.getItem("relay-owner-token") || "",
+      }),
+    }).catch((err) => console.error("[relay] stop request failed:", err));
   }, [sessionId]);
 
   useEffect(() => {
@@ -383,7 +430,11 @@ function ChatPage() {
 
   const exportConversation = useCallback(() => {
     const title = sessionTitle;
-    const lines: string[] = [`# ${title}`, `Exported: ${new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })}`, ""];
+    const lines: string[] = [
+      `# ${title}`,
+      `Exported: ${new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })}`,
+      "",
+    ];
 
     for (const msg of chatMessages) {
       const role = msg.role === "user" ? "User" : msg.role === "assistant" ? "Assistant" : "Tool";
@@ -402,7 +453,10 @@ function ChatPage() {
     const blob = new Blob([lines.join("\n")], { type: "text/markdown" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+    const slug = title
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "");
     a.href = url;
     a.download = `relay-${slug}-${new Date().toISOString().slice(0, 10)}.md`;
     a.click();
@@ -414,7 +468,9 @@ function ChatPage() {
       <div className="flex items-center justify-center h-full">
         <div className="text-center max-w-sm">
           <p className="text-[15px] font-medium text-body">Invalid session</p>
-          <p className="text-[13px] text-muted mt-2">Session ID must be alphanumeric (dashes and underscores allowed), up to 100 characters.</p>
+          <p className="text-[13px] text-muted mt-2">
+            Session ID must be alphanumeric (dashes and underscores allowed), up to 100 characters.
+          </p>
         </div>
       </div>
     );
@@ -452,7 +508,9 @@ function ChatPage() {
       )}
       {otherTabActive && (
         <div className="shrink-0 px-6 py-1.5 text-center bg-surface-hover border-b border-border">
-          <span className="text-[11px] font-mono text-dim">This session is open in another tab</span>
+          <span className="text-[11px] font-mono text-dim">
+            This session is open in another tab
+          </span>
         </div>
       )}
       <div className="shrink-0 px-3 md:px-6 py-2 border-b border-border-subtle flex items-center justify-between">
@@ -465,15 +523,13 @@ function ChatPage() {
           >
             ‹
           </button>
-          <h2 className="text-[13px] font-medium text-body truncate">
-            {sessionTitle}
-          </h2>
+          <h2 className="text-[13px] font-medium text-body truncate">{sessionTitle}</h2>
         </div>
         <div className="flex items-center gap-2 shrink-0 ml-2">
           <ModelSelector sessionId={sessionId} currentModel={sessionModel} />
           <button
             type="button"
-            onClick={() => setShowSystemPrompt(prev => !prev)}
+            onClick={() => setShowSystemPrompt((prev) => !prev)}
             aria-label="Edit system prompt"
             className={`text-[10px] font-mono transition-colors ${sessionSystemPrompt ? "text-accent" : "text-dim hover:text-muted"}`}
           >
@@ -507,11 +563,19 @@ function ChatPage() {
             ref={searchRef}
             type="text"
             value={searchQuery}
-            onChange={(e) => { setSearchQuery(e.target.value); setSearchIdx(0); }}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              setSearchIdx(0);
+            }}
             onKeyDown={(e) => {
-              if (e.key === "Escape") { setSearchOpen(false); setSearchQuery(""); }
+              if (e.key === "Escape") {
+                setSearchOpen(false);
+                setSearchQuery("");
+              }
               if (e.key === "Enter" && searchMatches.length > 0) {
-                const next = e.shiftKey ? (searchIdx - 1 + searchMatches.length) % searchMatches.length : (searchIdx + 1) % searchMatches.length;
+                const next = e.shiftKey
+                  ? (searchIdx - 1 + searchMatches.length) % searchMatches.length
+                  : (searchIdx + 1) % searchMatches.length;
                 setSearchIdx(next);
                 virtualizer.scrollToIndex(searchMatches[next], { align: "center" });
               }
@@ -525,7 +589,17 @@ function ChatPage() {
               {searchMatches.length > 0 ? `${searchIdx + 1}/${searchMatches.length}` : "0 results"}
             </span>
           )}
-          <button type="button" onClick={() => { setSearchOpen(false); setSearchQuery(""); }} className="text-dim hover:text-muted text-[11px]" aria-label="Close search">✕</button>
+          <button
+            type="button"
+            onClick={() => {
+              setSearchOpen(false);
+              setSearchQuery("");
+            }}
+            className="text-dim hover:text-muted text-[11px]"
+            aria-label="Close search"
+          >
+            ✕
+          </button>
         </div>
       )}
       <div
@@ -544,14 +618,28 @@ function ChatPage() {
             className="md:hidden flex items-center gap-1 text-[12px] font-mono text-muted hover:text-foreground transition-colors mb-2"
             aria-label="Back to conversations"
           >
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M9 3l-5 4 5 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            <svg aria-hidden="true" width="14" height="14" viewBox="0 0 14 14" fill="none">
+              <path
+                d="M9 3l-5 4 5 4"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
             Back
           </button>
-          {chatMessages.length === 0 && !showThinking && <EmptyState onSuggestion={doSend} hasAgent={hasAgent} />}
+          {chatMessages.length === 0 && !showThinking && (
+            <EmptyState onSuggestion={doSend} hasAgent={hasAgent} />
+          )}
 
           {chatMessages.length > 0 && (
             <div
-              style={{ height: `${virtualizer.getTotalSize()}px`, position: "relative", width: "100%" }}
+              style={{
+                height: `${virtualizer.getTotalSize()}px`,
+                position: "relative",
+                width: "100%",
+              }}
             >
               {virtualizer.getVirtualItems().map((virtualRow) => (
                 <div
@@ -567,7 +655,10 @@ function ChatPage() {
                   }}
                 >
                   <div className="mb-6">
-                    <MessageRow msg={chatMessages[virtualRow.index]} verification={verificationsByMessageId.get(chatMessages[virtualRow.index].id)} />
+                    <MessageRow
+                      msg={chatMessages[virtualRow.index]}
+                      verification={verificationsByMessageId.get(chatMessages[virtualRow.index].id)}
+                    />
                   </div>
                 </div>
               ))}
@@ -575,12 +666,12 @@ function ChatPage() {
           )}
 
           {showThinking && computedSessionStatus === "idle" && (
-            <div className="pl-[18px] animate-fade-in" role="status">
+            <output className="pl-[18px] animate-fade-in">
               <div className="flex gap-2 items-center pl-4">
                 <div className="w-1.5 h-1.5 rounded-full bg-muted animate-pulse" />
                 <span className="text-[12px] font-mono text-dim">in queue...</span>
               </div>
-            </div>
+            </output>
           )}
           {showThinking && computedSessionStatus !== "idle" && <ThinkingIndicator />}
 
@@ -605,18 +696,29 @@ function ChatPage() {
         {showScrollBtn && (
           <button
             type="button"
-            onClick={() => { scrollToBottom(true); setShowScrollBtn(false); }}
+            onClick={() => {
+              scrollToBottom(true);
+              setShowScrollBtn(false);
+            }}
             className="absolute -top-12 left-1/2 -translate-x-1/2 z-10 w-8 h-8 flex items-center justify-center rounded-full bg-surface border border-border text-muted hover:text-foreground hover:bg-surface-hover transition-all shadow-md animate-fade-in"
             aria-label="Scroll to bottom"
           >
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-              <path d="M7 2v10m0 0l-4-4m4 4l4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+            <svg aria-hidden="true" width="14" height="14" viewBox="0 0 14 14" fill="none">
+              <path
+                d="M7 2v10m0 0l-4-4m4 4l4-4"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
             </svg>
           </button>
         )}
         {queuedCount > 0 && (
           <div className="text-center py-1">
-            <span className="text-[10px] font-mono text-muted">{queuedCount} message{queuedCount !== 1 ? "s" : ""} queued</span>
+            <span className="text-[10px] font-mono text-muted">
+              {queuedCount} message{queuedCount !== 1 ? "s" : ""} queued
+            </span>
           </div>
         )}
         <InputBar
@@ -642,7 +744,7 @@ function AgentIndicator({ hasAgent }: { hasAgent: boolean }) {
     <span className="relative">
       <button
         type="button"
-        onClick={() => setShowPopover(prev => !prev)}
+        onClick={() => setShowPopover((prev) => !prev)}
         className="flex items-center gap-1 hover:bg-surface-hover px-1.5 py-0.5 rounded-[4px] transition-colors"
       >
         <span className={`w-[5px] h-[5px] rounded-full ${hasAgent ? "bg-green-500" : "bg-dim"}`} />
@@ -680,9 +782,10 @@ function AgentSetupGuide({ inline }: { inline?: boolean }) {
     setTimeout(() => setCopiedStep(null), 2000);
   };
 
-  const installCommand = platform.os === "windows"
-    ? "irm https://code.stoff.dev/install.ps1 | iex"
-    : "curl -fsSL https://code.stoff.dev/install.sh | sh";
+  const installCommand =
+    platform.os === "windows"
+      ? "irm https://code.stoff.dev/install.ps1 | iex"
+      : "curl -fsSL https://code.stoff.dev/install.sh | sh";
 
   const steps = [
     {
@@ -702,9 +805,7 @@ function AgentSetupGuide({ inline }: { inline?: boolean }) {
     },
   ];
 
-  const containerClass = inline
-    ? "text-left"
-    : "text-left mt-2";
+  const containerClass = inline ? "text-left" : "text-left mt-2";
 
   return (
     <div className={containerClass}>
@@ -712,7 +813,9 @@ function AgentSetupGuide({ inline }: { inline?: boolean }) {
         {steps.map((step, i) => (
           <div key={step.label} className="group">
             <div className="flex items-center gap-2 mb-1">
-              <span className="text-[10px] font-mono font-medium text-accent w-4 text-right">{i + 1}</span>
+              <span className="text-[10px] font-mono font-medium text-accent w-4 text-right">
+                {i + 1}
+              </span>
               <span className="text-[12px] font-medium text-body">{step.label}</span>
               <span className="text-[11px] text-dim">{step.description}</span>
             </div>
@@ -749,7 +852,9 @@ function AgentStatusPopover({ hasAgent, onClose }: { hasAgent: boolean; onClose:
     const handler = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) onClose();
     };
-    const keyHandler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    const keyHandler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
     document.addEventListener("mousedown", handler);
     document.addEventListener("keydown", keyHandler);
     return () => {
@@ -766,22 +871,28 @@ function AgentStatusPopover({ hasAgent, onClose }: { hasAgent: boolean; onClose:
     >
       <div className="px-4 py-3 border-b border-border flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <span className={`w-[6px] h-[6px] rounded-full ${hasAgent ? "bg-green-500" : "bg-dim"}`} />
+          <span
+            className={`w-[6px] h-[6px] rounded-full ${hasAgent ? "bg-green-500" : "bg-dim"}`}
+          />
           <span className="text-[13px] font-medium text-foreground">
             {hasAgent ? "Agent connected" : "Agent not connected"}
           </span>
         </div>
-        <button type="button" onClick={onClose} className="text-[10px] text-dim hover:text-muted">✕</button>
+        <button type="button" onClick={onClose} className="text-[10px] text-dim hover:text-muted">
+          ✕
+        </button>
       </div>
       <div className="px-4 py-3">
         {hasAgent ? (
           <p className="text-[12px] text-body">
-            Your local agent is running and connected. It can read files, execute commands, and interact with your codebase.
+            Your local agent is running and connected. It can read files, execute commands, and
+            interact with your codebase.
           </p>
         ) : (
           <div>
             <p className="text-[12px] text-body mb-3">
-              The agent runs on your machine and gives Relay access to your files, terminal, and codebase. Set it up in three steps:
+              The agent runs on your machine and gives Relay access to your files, terminal, and
+              codebase. Set it up in three steps:
             </p>
             <AgentSetupGuide inline />
           </div>
@@ -791,7 +902,10 @@ function AgentStatusPopover({ hasAgent, onClose }: { hasAgent: boolean; onClose:
   );
 }
 
-function EmptyState({ onSuggestion, hasAgent }: { onSuggestion: (text: string) => Promise<void> | void; hasAgent: boolean }) {
+function EmptyState({
+  onSuggestion,
+  hasAgent,
+}: { onSuggestion: (text: string) => Promise<void> | void; hasAgent: boolean }) {
   const [isFirstVisit] = useState(() => {
     if (typeof window === "undefined") return false;
     return localStorage.getItem("relay-has-chatted") !== "true";
@@ -826,7 +940,7 @@ function EmptyState({ onSuggestion, hasAgent }: { onSuggestion: (text: string) =
 
         <div className="mb-8">
           <div className="flex flex-wrap gap-2 justify-center">
-            {chatSuggestions.map(s => (
+            {chatSuggestions.map((s) => (
               <button
                 type="button"
                 key={s.text}
@@ -836,7 +950,8 @@ function EmptyState({ onSuggestion, hasAgent }: { onSuggestion: (text: string) =
                 }}
                 className="text-[12px] px-3 py-1.5 rounded-[4px] border border-border text-body hover:text-foreground hover:border-muted transition-colors font-mono"
               >
-                <span className="mr-1.5">{s.icon}</span>{s.text}
+                <span className="mr-1.5">{s.icon}</span>
+                {s.text}
               </button>
             ))}
           </div>
@@ -845,7 +960,7 @@ function EmptyState({ onSuggestion, hasAgent }: { onSuggestion: (text: string) =
         <div className="border border-border-subtle rounded-[8px] overflow-hidden">
           <button
             type="button"
-            onClick={() => setShowSetup(prev => !prev)}
+            onClick={() => setShowSetup((prev) => !prev)}
             className="w-full px-4 py-3 flex items-center justify-between hover:bg-surface-hover transition-colors"
           >
             <div className="flex items-center gap-2.5">
@@ -858,7 +973,8 @@ function EmptyState({ onSuggestion, hasAgent }: { onSuggestion: (text: string) =
             <div>
               <div className="px-4 pb-4 border-t border-border-subtle pt-3">
                 <p className="text-[12px] text-muted mb-3">
-                  The agent runs on your machine and gives Relay access to your files, terminal, and codebase.
+                  The agent runs on your machine and gives Relay access to your files, terminal, and
+                  codebase.
                 </p>
                 <AgentSetupGuide inline />
               </div>
@@ -872,22 +988,28 @@ function EmptyState({ onSuggestion, hasAgent }: { onSuggestion: (text: string) =
   return (
     <div className="py-12 sm:py-16 animate-fade-in max-w-[520px] mx-auto">
       <div className="text-center mb-6">
-        <h1 className="text-[36px] font-bold text-foreground tracking-[-0.03em] mb-2">
-          Relay
-        </h1>
+        <h1 className="text-[36px] font-bold text-foreground tracking-[-0.03em] mb-2">Relay</h1>
         {hasAgent ? (
           <p className="text-[13px] text-body">
             Agent connected. I can read files, run commands, and work with your codebase.
           </p>
         ) : (
           <p className="text-[13px] text-muted">
-            Ask me anything. <button type="button" onClick={() => setShowSetup(true)} className="text-accent hover:underline">Connect an agent</button> for file and shell access.
+            Ask me anything.{" "}
+            <button
+              type="button"
+              onClick={() => setShowSetup(true)}
+              className="text-accent hover:underline"
+            >
+              Connect an agent
+            </button>{" "}
+            for file and shell access.
           </p>
         )}
       </div>
 
       <div className="flex flex-wrap gap-2 justify-center mb-6">
-        {suggestions.map(s => (
+        {suggestions.map((s) => (
           <button
             type="button"
             key={s.text}
@@ -897,7 +1019,8 @@ function EmptyState({ onSuggestion, hasAgent }: { onSuggestion: (text: string) =
             }}
             className="text-[12px] px-3 py-1.5 rounded-[4px] border border-border text-body hover:text-foreground hover:border-muted transition-colors font-mono"
           >
-            <span className="mr-1.5">{s.icon}</span>{s.text}
+            <span className="mr-1.5">{s.icon}</span>
+            {s.text}
           </button>
         ))}
       </div>
@@ -906,10 +1029,17 @@ function EmptyState({ onSuggestion, hasAgent }: { onSuggestion: (text: string) =
         <div className="border border-border-subtle rounded-[8px] p-4 animate-scale-in">
           <div className="flex items-center justify-between mb-3">
             <span className="text-[13px] font-medium text-body">Connect your agent</span>
-            <button type="button" onClick={() => setShowSetup(false)} className="text-[10px] text-dim hover:text-muted">✕</button>
+            <button
+              type="button"
+              onClick={() => setShowSetup(false)}
+              className="text-[10px] text-dim hover:text-muted"
+            >
+              ✕
+            </button>
           </div>
           <p className="text-[12px] text-muted mb-3">
-            The agent runs on your machine and gives Relay access to your files, terminal, and codebase.
+            The agent runs on your machine and gives Relay access to your files, terminal, and
+            codebase.
           </p>
           <AgentSetupGuide inline />
         </div>

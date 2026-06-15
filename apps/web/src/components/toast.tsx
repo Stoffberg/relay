@@ -32,7 +32,9 @@ export const ToastContainer = memo(function ToastContainer() {
   useEffect(() => {
     const cb = () => setItems([...toasts]);
     listeners.add(cb);
-    return () => { listeners.delete(cb); };
+    return () => {
+      listeners.delete(cb);
+    };
   }, []);
 
   const dismiss = useCallback((id: number) => {
@@ -50,14 +52,23 @@ export const ToastContainer = memo(function ToastContainer() {
   };
 
   return (
-    <div aria-live="polite" className="fixed bottom-4 right-4 z-[60] flex flex-col gap-2 max-w-[360px]">
+    <div
+      aria-live="polite"
+      className="fixed bottom-4 right-4 z-[60] flex flex-col gap-2 max-w-[360px]"
+    >
       {items.map((t) => (
         <div
           key={t.id}
           className={`flex items-center gap-2 px-3 py-2 rounded-[6px] border text-[12px] font-mono animate-slide-up ${levelStyles[t.level]}`}
         >
           <span className="flex-1">{t.message}</span>
-          <button type="button" onClick={() => dismiss(t.id)} className="text-dim hover:text-muted shrink-0">✕</button>
+          <button
+            type="button"
+            onClick={() => dismiss(t.id)}
+            className="text-dim hover:text-muted shrink-0"
+          >
+            ✕
+          </button>
         </div>
       ))}
     </div>

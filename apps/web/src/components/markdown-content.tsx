@@ -1,35 +1,35 @@
-import { memo, useMemo, useCallback, useState } from "react";
+import { memo, useCallback, useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import type { Components } from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
-import type { Components } from "react-markdown";
+import remarkGfm from "remark-gfm";
+import type { PluggableList } from "unified";
 
 const sanitizeSchema = {
-	...defaultSchema,
-	attributes: {
-		...defaultSchema.attributes,
-		code: [...(defaultSchema.attributes?.code || []), "className", "style"],
-		span: [...(defaultSchema.attributes?.span || []), "className", "style"],
-		pre: [...(defaultSchema.attributes?.pre || []), "className", "style"],
-	},
+  ...defaultSchema,
+  attributes: {
+    ...defaultSchema.attributes,
+    code: [...(defaultSchema.attributes?.code || []), "className", "style"],
+    span: [...(defaultSchema.attributes?.span || []), "className", "style"],
+    pre: [...(defaultSchema.attributes?.pre || []), "className", "style"],
+  },
 };
 
 const remarkPlugins = [remarkGfm];
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const rehypePlugins: any[] = [
-	[rehypeSanitize, sanitizeSchema],
-	rehypeHighlight,
-];
+const rehypePlugins: PluggableList = [[rehypeSanitize, sanitizeSchema], rehypeHighlight];
 
 function CopyButton({ code }: { code: string }) {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = useCallback(() => {
-    navigator.clipboard.writeText(code).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }).catch((e) => console.error("Clipboard copy failed:", e));
+    navigator.clipboard
+      .writeText(code)
+      .then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      })
+      .catch((e) => console.error("Clipboard copy failed:", e));
   }, [code]);
 
   return (
@@ -48,7 +48,9 @@ function extractTextContent(children: React.ReactNode): string {
   if (typeof children === "string") return children;
   if (Array.isArray(children)) return children.map(extractTextContent).join("");
   if (children && typeof children === "object" && "props" in children) {
-    return extractTextContent((children as React.ReactElement<{ children?: React.ReactNode }>).props.children);
+    return extractTextContent(
+      (children as React.ReactElement<{ children?: React.ReactNode }>).props.children
+    );
   }
   return String(children ?? "");
 }
@@ -60,17 +62,22 @@ const components: Components = {
       children?: React.ReactNode;
     }>;
     const className = codeElement?.props?.className ?? "";
-		const lang = className
-			.replace(/^language-/, "")
-			.replace(/^hljs\s*/, "")
-			.replace(/^shiki\s*/, "");
+    const lang = className
+      .replace(/^language-/, "")
+      .replace(/^hljs\s*/, "")
+      .replace(/^shiki\s*/, "");
     const code = extractTextContent(codeElement?.props?.children);
 
     return (
-      <div className="group relative my-3 rounded-[8px] overflow-hidden border border-border-subtle" style={{ background: "var(--surface)" }}>
+      <div
+        className="group relative my-3 rounded-[8px] overflow-hidden border border-border-subtle"
+        style={{ background: "var(--surface)" }}
+      >
         {lang && (
           <div className="flex items-center justify-between px-3 py-1.5 border-b border-border-subtle">
-            <span className="text-[10px] font-medium font-mono text-muted uppercase tracking-wider">{lang}</span>
+            <span className="text-[10px] font-medium font-mono text-muted uppercase tracking-wider">
+              {lang}
+            </span>
           </div>
         )}
         <CopyButton code={code} />
@@ -81,12 +88,14 @@ const components: Components = {
     );
   },
 
-	code({ children, className }) {
-		const isBlock =
-			className?.includes("language-") || className?.includes("hljs") || className?.includes("shiki");
-		if (isBlock) {
-			return <code className={className}>{children}</code>;
-		}
+  code({ children, className }) {
+    const isBlock =
+      className?.includes("language-") ||
+      className?.includes("hljs") ||
+      className?.includes("shiki");
+    if (isBlock) {
+      return <code className={className}>{children}</code>;
+    }
     return (
       <code className="px-1.5 py-0.5 rounded-[3px] bg-surface text-accent text-[13px] font-mono">
         {children}
@@ -99,11 +108,15 @@ const components: Components = {
   },
 
   ul({ children }) {
-    return <ul className="mb-3 last:mb-0 pl-5 space-y-1 list-disc marker:text-ghost">{children}</ul>;
+    return (
+      <ul className="mb-3 last:mb-0 pl-5 space-y-1 list-disc marker:text-ghost">{children}</ul>
+    );
   },
 
   ol({ children }) {
-    return <ol className="mb-3 last:mb-0 pl-5 space-y-1 list-decimal marker:text-ghost">{children}</ol>;
+    return (
+      <ol className="mb-3 last:mb-0 pl-5 space-y-1 list-decimal marker:text-ghost">{children}</ol>
+    );
   },
 
   li({ children }) {
@@ -111,15 +124,21 @@ const components: Components = {
   },
 
   h1({ children }) {
-    return <h1 className="text-lg font-semibold mb-3 mt-4 first:mt-0 text-foreground">{children}</h1>;
+    return (
+      <h1 className="text-lg font-semibold mb-3 mt-4 first:mt-0 text-foreground">{children}</h1>
+    );
   },
 
   h2({ children }) {
-    return <h2 className="text-base font-semibold mb-2 mt-3 first:mt-0 text-foreground">{children}</h2>;
+    return (
+      <h2 className="text-base font-semibold mb-2 mt-3 first:mt-0 text-foreground">{children}</h2>
+    );
   },
 
   h3({ children }) {
-    return <h3 className="text-sm font-semibold mb-2 mt-3 first:mt-0 text-foreground">{children}</h3>;
+    return (
+      <h3 className="text-sm font-semibold mb-2 mt-3 first:mt-0 text-foreground">{children}</h3>
+    );
   },
 
   blockquote({ children }) {
@@ -132,7 +151,12 @@ const components: Components = {
 
   a({ href, children }) {
     return (
-      <a href={href} target="_blank" rel="noopener noreferrer" className="text-accent hover:text-accent/80 underline underline-offset-2">
+      <a
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-accent hover:text-accent/80 underline underline-offset-2"
+      >
         {children}
       </a>
     );
@@ -155,7 +179,11 @@ const components: Components = {
   },
 
   th({ children }) {
-    return <th className="px-3 py-2 text-left font-medium text-foreground border-b border-border">{children}</th>;
+    return (
+      <th className="px-3 py-2 text-left font-medium text-foreground border-b border-border">
+        {children}
+      </th>
+    );
   },
 
   td({ children }) {

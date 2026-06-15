@@ -2,10 +2,7 @@
   "name": "relay",
   "private": true,
   "type": "module",
-  "workspaces": [
-    "apps/*",
-    "packages/*"
-  ],
+  "workspaces": ["apps/*", "packages/*"],
   "scripts": {
     "dev": "turbo dev",
     "dev:web": "turbo -F web dev",
@@ -16,16 +13,19 @@
     "deploy:fly": "turbo -F relay-server deploy",
     "deploy:spacetime": "turbo -F relay-spacetime deploy",
     "check-types": "turbo check-types",
-    "check": "biome check --apply .",
+    "check": "biome check --write .",
     "check:ci": "biome check .",
     "test": "turbo test",
     "knip": "knip --exclude exports,types",
-    "sherif": "bunx sherif@latest"
+    "sherif": "bunx sherif@latest",
+    "doctor": "react-doctor --no-score --blocking error --category Bugs --category Security --category Accessibility --yes",
+    "build:ci": "bun run --cwd apps/web typecheck && turbo -F relay-agent build"
   },
   "devDependencies": {
     "@biomejs/biome": "1.9.2",
     "knip": "^5.83.1",
     "lefthook": "^2.1.1",
+    "react-doctor": "^0.5.6",
     "turbo": "^2.6.3",
     "typescript": "^5"
   },

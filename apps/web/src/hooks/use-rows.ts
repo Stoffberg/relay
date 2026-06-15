@@ -1,9 +1,21 @@
-import { useCallback, useRef, useState, useEffect, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useSpacetimeDB } from "spacetimedb/react";
 
 type TableDef = {
   accessorName: string;
 };
+
+type SpacetimeTable<Row> = {
+  iter(): Iterable<Row>;
+  onInsert(handler: (ctx: unknown, row: Row) => void): void;
+  onDelete(handler: (ctx: unknown, row: Row) => void): void;
+  onUpdate?(handler: (ctx: unknown, oldRow: Row, newRow: Row) => void): void;
+  removeOnInsert(handler: (ctx: unknown, row: Row) => void): void;
+  removeOnDelete(handler: (ctx: unknown, row: Row) => void): void;
+  removeOnUpdate?(handler: (ctx: unknown, oldRow: Row, newRow: Row) => void): void;
+};
+
+type SpacetimeDb<Row> = Record<string, SpacetimeTable<Row> | undefined>;
 
 let _subscriptionReady = false;
 const _readyListeners = new Set<() => void>();
@@ -31,11 +43,11 @@ export function useSubscriptionReady(): boolean {
       };
     },
     () => _subscriptionReady,
-    () => false,
+    () => false
   );
 }
 
-function safeIter<Row>(tbl: { iter(): Iterable<Row> }): Row[] | null {
+function safeIter<Row>(tbl: SpacetimeTable<Row>): Row[] | null {
   try {
     return Array.from(tbl.iter());
   } catch {
@@ -52,14 +64,16 @@ export function useRows<Row>(table: TableDef): readonly Row[] {
 
   useEffect(() => {
     mountedRef.current = true;
-    return () => { mountedRef.current = false; };
+    return () => {
+      mountedRef.current = false;
+    };
   }, []);
 
   const refreshRows = useCallback(() => {
+    if (!isActive || !subscriptionReady) return;
     const conn = getConnection();
     if (!conn) return;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const tbl = (conn.db as any)[accessorName];
+    const tbl = (conn.db as unknown as SpacetimeDb<Row>)[accessorName];
     if (!tbl) return;
     const result = safeIter<Row>(tbl);
     if (result !== null && mountedRef.current) {
@@ -71,26 +85,22 @@ export function useRows<Row>(table: TableDef): readonly Row[] {
         if (retry !== null) setRows(retry);
       }, 0);
     }
-  }, [getConnection, accessorName]);
+  }, [getConnection, accessorName, isActive, subscriptionReady]);
 
   useEffect(() => {
     refreshRows();
-  }, [refreshRows, isActive, subscriptionReady]);
+  }, [refreshRows]);
 
   useEffect(() => {
     const conn = getConnection();
     if (!conn) return;
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const tbl = (conn.db as any)[accessorName];
+    const tbl = (conn.db as unknown as SpacetimeDb<Row>)[accessorName];
     if (!tbl) return;
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const onInsert = (_ctx: any, _row: any) => refreshRows();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const onDelete = (_ctx: any, _row: any) => refreshRows();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const onUpdate = (_ctx: any, _old: any, _new: any) => refreshRows();
+    const onInsert = (_ctx: unknown, _row: Row) => refreshRows();
+    const onDelete = (_ctx: unknown, _row: Row) => refreshRows();
+    const onUpdate = (_ctx: unknown, _old: Row, _new: Row) => refreshRows();
 
     tbl.onInsert(onInsert);
     tbl.onDelete(onDelete);
@@ -103,7 +113,7 @@ export function useRows<Row>(table: TableDef): readonly Row[] {
       tbl.removeOnDelete(onDelete);
       tbl.removeOnUpdate?.(onUpdate);
     };
-  }, [getConnection, accessorName, refreshRows, isActive]);
+  }, [getConnection, accessorName, refreshRows]);
 
   return rows;
 }

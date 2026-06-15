@@ -1,9 +1,14 @@
+import { useNavigate } from "@tanstack/react-router";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSpacetimeDB } from "spacetimedb/react";
-import { useNavigate } from "@tanstack/react-router";
 import type { DbConnection } from "../spacetime";
 
-export type ConnectionState = "connecting" | "connected" | "disconnected" | "error" | "reconnecting";
+export type ConnectionState =
+  | "connecting"
+  | "connected"
+  | "disconnected"
+  | "error"
+  | "reconnecting";
 
 export interface SessionPreview {
   id: string;
@@ -69,12 +74,17 @@ export const Sidebar = memo(function Sidebar({
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [pinnedIds, setPinnedIds] = useState<Set<string>>(() => {
     if (typeof window === "undefined") return new Set();
-    try { return new Set(JSON.parse(localStorage.getItem("relay-pinned") || "[]")); } catch { return new Set(); }
+    try {
+      return new Set(JSON.parse(localStorage.getItem("relay-pinned") || "[]"));
+    } catch {
+      return new Set();
+    }
   });
   const togglePin = useCallback((id: string) => {
-    setPinnedIds(prev => {
+    setPinnedIds((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       localStorage.setItem("relay-pinned", JSON.stringify([...next]));
       return next;
     });
@@ -82,7 +92,9 @@ export const Sidebar = memo(function Sidebar({
   const [filter, setFilter] = useState("");
   const [showArchived, setShowArchived] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; session: SessionPreview } | null>(null);
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; session: SessionPreview } | null>(
+    null
+  );
   const navigate = useNavigate();
   const [editText, setEditText] = useState("");
   const editRef = useRef<HTMLInputElement>(null);
@@ -95,7 +107,10 @@ export const Sidebar = memo(function Sidebar({
   const { getConnection } = useSpacetimeDB();
 
   const saveEdit = useCallback(() => {
-    if (!editingId || !editText.trim()) { setEditingId(null); return; }
+    if (!editingId || !editText.trim()) {
+      setEditingId(null);
+      return;
+    }
     const conn = getConnection() as DbConnection | null;
     if (conn) conn.reducers.updateSessionTitle({ sessionId: editingId, title: editText.trim() });
     setEditingId(null);
@@ -104,10 +119,15 @@ export const Sidebar = memo(function Sidebar({
   useEffect(() => {
     if (!ctxMenu) return;
     const close = () => setCtxMenu(null);
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") close(); };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") close();
+    };
     window.addEventListener("click", close);
     window.addEventListener("keydown", onKey);
-    return () => { window.removeEventListener("click", close); window.removeEventListener("keydown", onKey); };
+    return () => {
+      window.removeEventListener("click", close);
+      window.removeEventListener("keydown", onKey);
+    };
   }, [ctxMenu]);
 
   const [, setTick] = useState(0);
@@ -120,11 +140,11 @@ export const Sidebar = memo(function Sidebar({
   const filteredSessions = useMemo(() => {
     let list = sessions;
     if (!showArchived) {
-      list = list.filter(s => !s.isArchived);
+      list = list.filter((s) => !s.isArchived);
     }
     if (filter.trim()) {
       const q = filter.toLowerCase();
-      list = list.filter(s => s.title.toLowerCase().includes(q));
+      list = list.filter((s) => s.title.toLowerCase().includes(q));
     }
     return [...list].sort((a, b) => {
       const ap = pinnedIds.has(a.id) ? 1 : 0;
@@ -134,7 +154,7 @@ export const Sidebar = memo(function Sidebar({
     });
   }, [sessions, filter, pinnedIds, showArchived]);
 
-  const archivedCount = useMemo(() => sessions.filter(s => s.isArchived).length, [sessions]);
+  const archivedCount = useMemo(() => sessions.filter((s) => s.isArchived).length, [sessions]);
 
   const groupStarts = useMemo(() => {
     const map = new Map<number, DateGroup>();
@@ -156,11 +176,28 @@ export const Sidebar = memo(function Sidebar({
         className="flex flex-col items-center shrink-0 py-4 gap-3 transition-all duration-300 select-none"
         style={{ width: "48px", borderRight: "1px solid var(--border)" }}
       >
-        <button type="button" onClick={onToggleCollapse} aria-label="Expand sidebar" className="text-[14px] text-muted hover:text-foreground transition-colors">
+        <button
+          type="button"
+          onClick={onToggleCollapse}
+          aria-label="Expand sidebar"
+          className="text-[14px] text-muted hover:text-foreground transition-colors"
+        >
           ›
         </button>
-        <button type="button" onClick={onNewChat} aria-label="New conversation" className="text-accent hover:text-accent/80 transition-colors">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 3v10M3 8h10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
+        <button
+          type="button"
+          onClick={onNewChat}
+          aria-label="New conversation"
+          className="text-accent hover:text-accent/80 transition-colors"
+        >
+          <svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <path
+              d="M8 3v10M3 8h10"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+            />
+          </svg>
         </button>
       </nav>
     );
@@ -210,7 +247,7 @@ export const Sidebar = memo(function Sidebar({
           {archivedCount > 0 && (
             <button
               type="button"
-              onClick={() => setShowArchived(prev => !prev)}
+              onClick={() => setShowArchived((prev) => !prev)}
               aria-label={showArchived ? "Hide archived" : "Show archived"}
               className={`text-[10px] font-mono shrink-0 transition-colors ${showArchived ? "text-accent" : "text-dim hover:text-muted"}`}
             >
@@ -255,11 +292,16 @@ export const Sidebar = memo(function Sidebar({
               className="relative"
               onMouseEnter={() => setHoveredId(session.id)}
               onMouseLeave={() => setHoveredId(null)}
-              onContextMenu={(e) => { e.preventDefault(); setCtxMenu({ x: e.clientX, y: e.clientY, session }); }}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                setCtxMenu({ x: e.clientX, y: e.clientY, session });
+              }}
             >
               {groupLabel && (
                 <div className="px-5 pt-3 pb-1">
-                  <span className="text-[10px] font-medium uppercase tracking-wider text-dim">{groupLabel}</span>
+                  <span className="text-[10px] font-medium uppercase tracking-wider text-dim">
+                    {groupLabel}
+                  </span>
                 </div>
               )}
               <button
@@ -283,7 +325,9 @@ export const Sidebar = memo(function Sidebar({
               >
                 <div className="flex items-center gap-0 px-5 py-3">
                   <span className="text-[10px] w-5 shrink-0 tabular-nums font-mono text-dim">
-                    {pinnedIds.has(session.id) ? "•" : String(filteredSessions.length - rowIdx).padStart(2, "0")}
+                    {pinnedIds.has(session.id)
+                      ? "•"
+                      : String(filteredSessions.length - rowIdx).padStart(2, "0")}
                   </span>
                   <div className="flex-1 min-w-0 pl-2">
                     <div className="flex items-center justify-between mb-0.5">
@@ -297,7 +341,10 @@ export const Sidebar = memo(function Sidebar({
                           </div>
                         )}
                         {isError && (
-                          <div className="w-[6px] h-[6px] rounded-full shrink-0" style={{ background: "#ef4444" }} />
+                          <div
+                            className="w-[6px] h-[6px] rounded-full shrink-0"
+                            style={{ background: "#ef4444" }}
+                          />
                         )}
                         {editingId === session.id ? (
                           <input
@@ -306,7 +353,10 @@ export const Sidebar = memo(function Sidebar({
                             value={editText}
                             onChange={(e) => setEditText(e.target.value)}
                             onKeyDown={(e) => {
-                              if (e.key === "Enter") { e.preventDefault(); saveEdit(); }
+                              if (e.key === "Enter") {
+                                e.preventDefault();
+                                saveEdit();
+                              }
                               if (e.key === "Escape") setEditingId(null);
                               e.stopPropagation();
                             }}
@@ -318,13 +368,18 @@ export const Sidebar = memo(function Sidebar({
                         ) : (
                           <span
                             className={`text-[14px] font-medium truncate ${isActive ? "text-foreground" : "text-body"}`}
-                            onDoubleClick={(e) => { e.stopPropagation(); startEditing(session); }}
+                            onDoubleClick={(e) => {
+                              e.stopPropagation();
+                              startEditing(session);
+                            }}
                           >
                             {session.title}
                           </span>
                         )}
                       </div>
-                      <span className={`text-[10px] shrink-0 ml-2 tabular-nums font-mono ${isError ? "text-danger" : "text-dim"}`}>
+                      <span
+                        className={`text-[10px] shrink-0 ml-2 tabular-nums font-mono ${isError ? "text-danger" : "text-dim"}`}
+                      >
                         {isError
                           ? "error"
                           : isBusy
@@ -338,9 +393,17 @@ export const Sidebar = memo(function Sidebar({
                     </div>
                     {(session.lastMessage || session.isArchived || session.model) && (
                       <div className="flex items-center gap-1.5 mt-0.5">
-                        {session.isArchived && <span className="text-[9px] font-mono text-dim">archived</span>}
-                        {session.model && <span className="text-[9px] font-mono text-dim truncate">{session.model.split("/").pop()}</span>}
-                        {session.lastMessage && <p className="text-[11px] text-dim truncate">{session.lastMessage}</p>}
+                        {session.isArchived && (
+                          <span className="text-[9px] font-mono text-dim">archived</span>
+                        )}
+                        {session.model && (
+                          <span className="text-[9px] font-mono text-dim truncate">
+                            {session.model.split("/").pop()}
+                          </span>
+                        )}
+                        {session.lastMessage && (
+                          <p className="text-[11px] text-dim truncate">{session.lastMessage}</p>
+                        )}
                       </div>
                     )}
                   </div>
@@ -355,23 +418,67 @@ export const Sidebar = memo(function Sidebar({
           className="fixed z-50 py-1 min-w-[160px] bg-cmd border border-border rounded-[6px] animate-scale-in"
           style={{ top: ctxMenu.y, left: ctxMenu.x, boxShadow: "0 8px 24px rgba(0,0,0,0.3)" }}
           onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.stopPropagation()}
         >
-          <button type="button" onClick={() => { startEditing(ctxMenu.session); setCtxMenu(null); }} className="w-full text-left px-3 py-1.5 text-[12px] text-body hover:bg-surface-hover transition-colors">Rename</button>
-          <button type="button" onClick={() => { togglePin(ctxMenu.session.id); setCtxMenu(null); }} className="w-full text-left px-3 py-1.5 text-[12px] text-body hover:bg-surface-hover transition-colors">{pinnedIds.has(ctxMenu.session.id) ? "Unpin" : "Pin"}</button>
-          <button type="button" onClick={() => { navigator.clipboard.writeText(ctxMenu.session.id).catch(() => {}); setCtxMenu(null); }} className="w-full text-left px-3 py-1.5 text-[12px] text-body hover:bg-surface-hover transition-colors">Copy session ID</button>
+          <button
+            type="button"
+            onClick={() => {
+              startEditing(ctxMenu.session);
+              setCtxMenu(null);
+            }}
+            className="w-full text-left px-3 py-1.5 text-[12px] text-body hover:bg-surface-hover transition-colors"
+          >
+            Rename
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              togglePin(ctxMenu.session.id);
+              setCtxMenu(null);
+            }}
+            className="w-full text-left px-3 py-1.5 text-[12px] text-body hover:bg-surface-hover transition-colors"
+          >
+            {pinnedIds.has(ctxMenu.session.id) ? "Unpin" : "Pin"}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              navigator.clipboard.writeText(ctxMenu.session.id).catch(() => {});
+              setCtxMenu(null);
+            }}
+            className="w-full text-left px-3 py-1.5 text-[12px] text-body hover:bg-surface-hover transition-colors"
+          >
+            Copy session ID
+          </button>
           <div className="my-1 border-t border-border" />
-          <button type="button" onClick={() => {
-            const conn = getConnection() as DbConnection | null;
-            if (conn) conn.reducers.archiveSession({ sessionId: ctxMenu.session.id, archived: !ctxMenu.session.isArchived });
-            setCtxMenu(null);
-          }} className="w-full text-left px-3 py-1.5 text-[12px] text-body hover:bg-surface-hover transition-colors">{ctxMenu.session.isArchived ? "Unarchive" : "Archive"}</button>
-          <button type="button" onClick={() => {
-            const conn = getConnection() as DbConnection | null;
-            const sid = ctxMenu.session.id;
-            if (conn) conn.reducers.deleteSession({ sessionId: sid });
-            if (activeSessionId === sid) navigate({ to: "/" });
-            setCtxMenu(null);
-          }} className="w-full text-left px-3 py-1.5 text-[12px] text-danger hover:bg-danger/10 transition-colors">Delete</button>
+          <button
+            type="button"
+            onClick={() => {
+              const conn = getConnection() as DbConnection | null;
+              if (conn)
+                conn.reducers.archiveSession({
+                  sessionId: ctxMenu.session.id,
+                  archived: !ctxMenu.session.isArchived,
+                });
+              setCtxMenu(null);
+            }}
+            className="w-full text-left px-3 py-1.5 text-[12px] text-body hover:bg-surface-hover transition-colors"
+          >
+            {ctxMenu.session.isArchived ? "Unarchive" : "Archive"}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              const conn = getConnection() as DbConnection | null;
+              const sid = ctxMenu.session.id;
+              if (conn) conn.reducers.deleteSession({ sessionId: sid });
+              if (activeSessionId === sid) navigate({ to: "/" });
+              setCtxMenu(null);
+            }}
+            className="w-full text-left px-3 py-1.5 text-[12px] text-danger hover:bg-danger/10 transition-colors"
+          >
+            Delete
+          </button>
         </div>
       )}
     </nav>
@@ -387,7 +494,9 @@ function SidebarAgentIndicator({ hasOnlineAgent }: { hasOnlineAgent: boolean }) 
     const handler = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) setShowPopover(false);
     };
-    const keyHandler = (e: KeyboardEvent) => { if (e.key === "Escape") setShowPopover(false); };
+    const keyHandler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setShowPopover(false);
+    };
     document.addEventListener("mousedown", handler);
     document.addEventListener("keydown", keyHandler);
     return () => {
@@ -408,7 +517,8 @@ function SidebarAgentIndicator({ hasOnlineAgent }: { hasOnlineAgent: boolean }) 
     setTimeout(() => setCopiedStep(null), 2000);
   };
 
-  const isWindows = typeof navigator !== "undefined" && navigator.userAgent.toLowerCase().includes("win");
+  const isWindows =
+    typeof navigator !== "undefined" && navigator.userAgent.toLowerCase().includes("win");
   const installCommand = isWindows
     ? "irm https://code.stoff.dev/install.ps1 | iex"
     : "curl -fsSL https://code.stoff.dev/install.sh | sh";
@@ -423,11 +533,15 @@ function SidebarAgentIndicator({ hasOnlineAgent }: { hasOnlineAgent: boolean }) 
     <span className="relative" ref={ref}>
       <button
         type="button"
-        onClick={() => setShowPopover(prev => !prev)}
+        onClick={() => setShowPopover((prev) => !prev)}
         className="flex items-center gap-1.5 hover:bg-surface-hover px-1.5 py-0.5 rounded-[4px] transition-colors -ml-1.5"
       >
-        <span className={`w-[5px] h-[5px] rounded-full ${hasOnlineAgent ? "bg-accent" : "bg-dim"}`} />
-        <span className="text-[11px] font-mono text-muted">{hasOnlineAgent ? "agent" : "no agent"}</span>
+        <span
+          className={`w-[5px] h-[5px] rounded-full ${hasOnlineAgent ? "bg-accent" : "bg-dim"}`}
+        />
+        <span className="text-[11px] font-mono text-muted">
+          {hasOnlineAgent ? "agent" : "no agent"}
+        </span>
       </button>
       {showPopover && (
         <div
@@ -436,17 +550,26 @@ function SidebarAgentIndicator({ hasOnlineAgent }: { hasOnlineAgent: boolean }) 
         >
           <div className="px-3.5 py-2.5 border-b border-border flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <span className={`w-[6px] h-[6px] rounded-full ${hasOnlineAgent ? "bg-green-500" : "bg-dim"}`} />
+              <span
+                className={`w-[6px] h-[6px] rounded-full ${hasOnlineAgent ? "bg-green-500" : "bg-dim"}`}
+              />
               <span className="text-[12px] font-medium text-foreground">
                 {hasOnlineAgent ? "Agent connected" : "Agent not connected"}
               </span>
             </div>
-            <button type="button" onClick={() => setShowPopover(false)} className="text-[10px] text-dim hover:text-muted">✕</button>
+            <button
+              type="button"
+              onClick={() => setShowPopover(false)}
+              className="text-[10px] text-dim hover:text-muted"
+            >
+              ✕
+            </button>
           </div>
           <div className="px-3.5 py-3">
             {hasOnlineAgent ? (
               <p className="text-[11px] text-body">
-                Your local agent is running. It can read files, execute commands, and interact with your codebase.
+                Your local agent is running. It can read files, execute commands, and interact with
+                your codebase.
               </p>
             ) : (
               <div>
@@ -457,7 +580,9 @@ function SidebarAgentIndicator({ hasOnlineAgent }: { hasOnlineAgent: boolean }) 
                   {steps.map((step, i) => (
                     <div key={step.label}>
                       <div className="flex items-center gap-1.5 mb-0.5">
-                        <span className="text-[9px] font-mono font-medium text-accent w-3 text-right">{i + 1}</span>
+                        <span className="text-[9px] font-mono font-medium text-accent w-3 text-right">
+                          {i + 1}
+                        </span>
                         <span className="text-[11px] font-medium text-body">{step.label}</span>
                       </div>
                       <div className="ml-[18px] flex items-center gap-1">
@@ -506,7 +631,8 @@ function ConnectionIndicator({ state }: { state: ConnectionState }) {
   };
 
   const dotColor = dotColors[displayState];
-  const pulseClass = displayState === "connecting" || displayState === "reconnecting" ? "animate-pulse" : "";
+  const pulseClass =
+    displayState === "connecting" || displayState === "reconnecting" ? "animate-pulse" : "";
 
   return (
     <span className="flex items-center gap-1.5">
@@ -514,9 +640,7 @@ function ConnectionIndicator({ state }: { state: ConnectionState }) {
         className={`w-[5px] h-[5px] rounded-full ${pulseClass}`}
         style={{ background: dotColor }}
       />
-      <span className="text-[11px] font-mono text-muted">
-        {labels[displayState]}
-      </span>
+      <span className="text-[11px] font-mono text-muted">{labels[displayState]}</span>
     </span>
   );
 }

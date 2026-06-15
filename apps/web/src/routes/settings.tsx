@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useTheme } from "../hooks/use-theme";
 import { useState } from "react";
+import { useTheme } from "../hooks/use-theme";
 
 export const Route = createFileRoute("/settings")({
   component: SettingsPage,
@@ -33,7 +33,8 @@ function SettingsPage() {
     setTimeout(() => setCopiedStep(null), 2000);
   };
 
-  const isWindows = typeof navigator !== "undefined" && navigator.userAgent.toLowerCase().includes("win");
+  const isWindows =
+    typeof navigator !== "undefined" && navigator.userAgent.toLowerCase().includes("win");
   const installCommand = isWindows
     ? "irm https://code.stoff.dev/install.ps1 | iex"
     : "curl -fsSL https://code.stoff.dev/install.sh | sh";
@@ -91,13 +92,16 @@ function SettingsPage() {
           <section>
             <h2 className="text-[14px] font-semibold text-foreground mb-4">Agent Setup</h2>
             <p className="text-[12px] text-muted mb-4">
-              The agent runs on your machine and gives Relay access to your files, terminal, and codebase. Follow these steps to get it connected.
+              The agent runs on your machine and gives Relay access to your files, terminal, and
+              codebase. Follow these steps to get it connected.
             </p>
             <div className="space-y-3 mb-6">
               {steps.map((step, i) => (
                 <div key={step.label}>
                   <div className="flex items-center gap-2 mb-1">
-                    <span className="text-[10px] font-mono font-medium text-accent w-4 text-right">{i + 1}</span>
+                    <span className="text-[10px] font-mono font-medium text-accent w-4 text-right">
+                      {i + 1}
+                    </span>
                     <span className="text-[12px] font-medium text-body">{step.label}</span>
                     <span className="text-[11px] text-dim">{step.description}</span>
                   </div>
@@ -114,7 +118,6 @@ function SettingsPage() {
                         {copiedStep === i ? "✓" : "copy"}
                       </button>
                     </div>
-
                   </div>
                 </div>
               ))}
@@ -127,7 +130,8 @@ function SettingsPage() {
               <div>
                 <p className="text-[13px] text-body mb-1">Owner Token</p>
                 <p className="text-[11px] text-muted mb-2">
-                  This token links your browser to your agent. It was generated automatically when you first opened Relay.
+                  This token links your browser to your agent. It was generated automatically when
+                  you first opened Relay.
                 </p>
                 <div className="flex items-center gap-2">
                   <code className="flex-1 px-3 py-2 bg-surface-hover border border-border rounded-[6px] text-[11px] font-mono text-muted overflow-x-auto whitespace-nowrap">

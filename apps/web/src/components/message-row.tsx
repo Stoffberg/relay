@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useMemo, useRef, useState } from "react";
 import type { ChatMessage, ChatToolCall } from "../lib/chat-store";
 import type { Verification } from "../spacetime";
 import { MarkdownContent } from "./markdown-content";
@@ -81,17 +81,28 @@ function UserMessageRow({ msg }: { msg: ChatMessage }) {
             value={editText}
             onChange={(e) => setEditText(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); submitEdit(); }
+              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                e.preventDefault();
+                submitEdit();
+              }
               if (e.key === "Escape") setEditing(false);
             }}
             rows={Math.min(editText.split("\n").length + 1, 10)}
             className="w-full text-[14px] leading-[1.75] bg-transparent text-body border border-accent/30 rounded-[4px] px-2 py-1 resize-none focus:outline-none focus:border-accent caret-accent"
           />
           <div className="flex items-center gap-2 mt-1">
-            <button type="button" onClick={submitEdit} className="text-[11px] font-medium px-2.5 py-1 rounded-[4px] bg-accent/10 text-accent hover:bg-accent/20 transition-colors">
+            <button
+              type="button"
+              onClick={submitEdit}
+              className="text-[11px] font-medium px-2.5 py-1 rounded-[4px] bg-accent/10 text-accent hover:bg-accent/20 transition-colors"
+            >
               Save & regenerate
             </button>
-            <button type="button" onClick={() => setEditing(false)} className="text-[11px] font-medium px-2.5 py-1 text-dim hover:text-muted transition-colors">
+            <button
+              type="button"
+              onClick={() => setEditing(false)}
+              className="text-[11px] font-medium px-2.5 py-1 text-dim hover:text-muted transition-colors"
+            >
               Cancel
             </button>
           </div>
@@ -101,8 +112,13 @@ function UserMessageRow({ msg }: { msg: ChatMessage }) {
   }
 
   return (
-    <div className={`group/msg flex items-start gap-3 relative ${isPending ? "text-muted" : "text-body"}`} title={formatMessageTime(msg.createdAt)}>
-      <div className={`w-1.5 h-1.5 rounded-full shrink-0 mt-[9px] ${isPending ? "bg-dim" : "bg-muted"}`} />
+    <div
+      className={`group/msg flex items-start gap-3 relative ${isPending ? "text-muted" : "text-body"}`}
+      title={formatMessageTime(msg.createdAt)}
+    >
+      <div
+        className={`w-1.5 h-1.5 rounded-full shrink-0 mt-[9px] ${isPending ? "bg-dim" : "bg-muted"}`}
+      />
       <div className="text-[14px] leading-[1.75] break-words min-w-0">
         <MarkdownContent content={msg.content} />
       </div>
@@ -120,7 +136,10 @@ function UserMessageRow({ msg }: { msg: ChatMessage }) {
   );
 }
 
-function AssistantMessageRow({ msg, verification }: { msg: ChatMessage; verification?: Verification }) {
+function AssistantMessageRow({
+  msg,
+  verification,
+}: { msg: ChatMessage; verification?: Verification }) {
   const canRegenerate = msg.status === "complete" && msg.sessionId;
 
   const handleRegenerate = useCallback(async () => {
@@ -144,7 +163,10 @@ function AssistantMessageRow({ msg, verification }: { msg: ChatMessage; verifica
   }, [msg.id, msg.sessionId]);
 
   return (
-    <div className="group/msg pl-[18px] border-l-2 border-border-subtle" title={formatMessageTime(msg.createdAt)}>
+    <div
+      className="group/msg pl-[18px] border-l-2 border-border-subtle"
+      title={formatMessageTime(msg.createdAt)}
+    >
       <div className="pl-4">
         {msg.status === "error" ? (
           <div>
@@ -152,7 +174,13 @@ function AssistantMessageRow({ msg, verification }: { msg: ChatMessage; verifica
             {msg.retryText && (
               <button
                 type="button"
-                onClick={() => window.dispatchEvent(new CustomEvent("relay:retry", { detail: { text: msg.retryText, errorId: msg.id } }))}
+                onClick={() =>
+                  window.dispatchEvent(
+                    new CustomEvent("relay:retry", {
+                      detail: { text: msg.retryText, errorId: msg.id },
+                    })
+                  )
+                }
                 className="mt-1 text-[11px] font-medium px-2.5 py-1 rounded-[4px] text-danger border border-danger/30 hover:bg-danger-soft transition-colors"
               >
                 Retry
@@ -160,19 +188,20 @@ function AssistantMessageRow({ msg, verification }: { msg: ChatMessage; verifica
             )}
           </div>
         ) : msg.segments && msg.segments.length > 0 ? (
-          msg.segments.map((seg, i) =>
+          msg.segments.map((seg) =>
             seg.type === "text" ? (
-              <MarkdownContent key={i} content={seg.content} />
+              <MarkdownContent key={`text:${seg.content}`} content={seg.content} />
             ) : (
-              <ToolCallBlock key={i} calls={seg.calls} />
+              <ToolCallBlock
+                key={`tools:${seg.calls.map((call) => call.id).join("-")}`}
+                calls={seg.calls}
+              />
             )
           )
         ) : msg.content ? (
           <>
             <MarkdownContent content={msg.content} />
-            {msg.toolCalls && msg.toolCalls.length > 0 && (
-              <ToolCallBlock calls={msg.toolCalls} />
-            )}
+            {msg.toolCalls && msg.toolCalls.length > 0 && <ToolCallBlock calls={msg.toolCalls} />}
           </>
         ) : msg.toolCalls && msg.toolCalls.length > 0 ? (
           <ToolCallBlock calls={msg.toolCalls} />
@@ -184,7 +213,10 @@ function AssistantMessageRow({ msg, verification }: { msg: ChatMessage; verifica
       {msg.status === "complete" && (
         <div className="flex items-center gap-1.5 mt-2 pl-4">
           {msg.completionTokens != null && (
-            <span className="text-[9px] font-mono text-dim" title={`Prompt: ${msg.promptTokens ?? 0}, Completion: ${msg.completionTokens}`}>
+            <span
+              className="text-[9px] font-mono text-dim"
+              title={`Prompt: ${msg.promptTokens ?? 0}, Completion: ${msg.completionTokens}`}
+            >
               {msg.completionTokens} tok
             </span>
           )}
@@ -243,10 +275,13 @@ function CopyMessageButton({ content }: { content: string }) {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = useCallback(() => {
-    navigator.clipboard.writeText(content).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }).catch(() => {});
+    navigator.clipboard
+      .writeText(content)
+      .then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      })
+      .catch(() => {});
   }, [content]);
 
   return (
@@ -278,22 +313,35 @@ function ToolCallBlock({ calls }: { calls: ChatToolCall[] }) {
   );
 }
 
-function ToolCallPill({ tc, isExpanded, onToggle }: { tc: ChatToolCall; isExpanded: boolean; onToggle: () => void }) {
-  const isPending = tc.status === "generating" || tc.status === "pending" || tc.status === "executing";
+function ToolCallPill({
+  tc,
+  isExpanded,
+  onToggle,
+}: { tc: ChatToolCall; isExpanded: boolean; onToggle: () => void }) {
+  const isPending =
+    tc.status === "generating" || tc.status === "pending" || tc.status === "executing";
   const isError = tc.status === "error";
   const preRef = useRef<HTMLPreElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
+  const resizeObserverRef = useRef<ResizeObserver | null>(null);
   const [hasOverflow, setHasOverflow] = useState(false);
 
-  useEffect(() => {
-    const el = preRef.current;
-    if (!el) return;
-    const check = () => setHasOverflow(el.scrollHeight > el.clientHeight);
+  const setPreRef = useCallback((el: HTMLPreElement | null) => {
+    resizeObserverRef.current?.disconnect();
+    resizeObserverRef.current = null;
+    preRef.current = el;
+    if (!el) {
+      setHasOverflow(false);
+      return;
+    }
+    const check = () => {
+      setHasOverflow(el.scrollHeight > el.clientHeight);
+    };
     check();
     const observer = new ResizeObserver(check);
     observer.observe(el);
-    return () => observer.disconnect();
-  }, [isExpanded, tc.output, tc.error]);
+    resizeObserverRef.current = observer;
+  }, []);
 
   const argSummary = useMemo(() => {
     try {
@@ -306,7 +354,10 @@ function ToolCallPill({ tc, isExpanded, onToggle }: { tc: ChatToolCall; isExpand
 
   const handleToggle = useCallback(() => {
     const btn = buttonRef.current;
-    if (!btn) { onToggle(); return; }
+    if (!btn) {
+      onToggle();
+      return;
+    }
     const rectBefore = btn.getBoundingClientRect();
     onToggle();
     requestAnimationFrame(() => {
@@ -355,13 +406,19 @@ function ToolCallPill({ tc, isExpanded, onToggle }: { tc: ChatToolCall; isExpand
       </button>
       {isExpanded && (
         <div className="mt-1 rounded-[6px] bg-surface border border-border overflow-hidden">
-          {(tc.output || tc.error) ? (
+          {tc.output || tc.error ? (
             <div className="px-3 py-2">
               {(tc.output || tc.error || "").includes("(truncated") && (
-                <span className="inline-block text-[10px] font-medium text-warning mb-1 px-1.5 py-0.5 rounded bg-warning/10">Truncated</span>
+                <span className="inline-block text-[10px] font-medium text-warning mb-1 px-1.5 py-0.5 rounded bg-warning/10">
+                  Truncated
+                </span>
               )}
               <div className="relative">
-                <pre ref={preRef} className={`text-[11px] font-mono whitespace-pre-wrap break-all max-h-[400px] overflow-y-auto ${tc.success === false ? "text-danger" : "text-body"}`}>
+                <pre
+                  key={`${tc.output?.length ?? 0}:${tc.error?.length ?? 0}`}
+                  ref={setPreRef}
+                  className={`text-[11px] font-mono whitespace-pre-wrap break-all max-h-[400px] overflow-y-auto ${tc.success === false ? "text-danger" : "text-body"}`}
+                >
                   {tc.error || tc.output}
                 </pre>
                 {hasOverflow && (
@@ -388,7 +445,9 @@ function formatArgSummary(toolName: string, args: Record<string, unknown>): stri
       return typeof args.path === "string" ? shortenPath(args.path) : "";
     case "shell_exec":
       return typeof args.command === "string"
-        ? args.command.length > 60 ? args.command.slice(0, 57) + "..." : args.command
+        ? args.command.length > 60
+          ? `${args.command.slice(0, 57)}...`
+          : args.command
         : "";
     case "glob": {
       const pat = typeof args.pattern === "string" ? args.pattern : "";
@@ -411,17 +470,26 @@ function formatArgSummary(toolName: string, args: Record<string, unknown>): stri
 function shortenPath(path: string): string {
   const parts = path.split("/");
   if (parts.length <= 3) return path;
-  return ".../" + parts.slice(-3).join("/");
+  return `.../${parts.slice(-3).join("/")}`;
 }
 
 export function ThinkingIndicator() {
   return (
-    <div className="pl-[18px] animate-fade-in" role="status" aria-label="Relay is thinking">
+    <output className="pl-[18px] animate-fade-in" aria-label="Relay is thinking">
       <div className="flex gap-1.5 items-center pl-4">
-        <div className="w-1 h-1 rounded-full bg-muted animate-bounce" style={{ animationDelay: "0ms" }} />
-        <div className="w-1 h-1 rounded-full bg-muted animate-bounce" style={{ animationDelay: "150ms" }} />
-        <div className="w-1 h-1 rounded-full bg-muted animate-bounce" style={{ animationDelay: "300ms" }} />
+        <div
+          className="w-1 h-1 rounded-full bg-muted animate-bounce"
+          style={{ animationDelay: "0ms" }}
+        />
+        <div
+          className="w-1 h-1 rounded-full bg-muted animate-bounce"
+          style={{ animationDelay: "150ms" }}
+        />
+        <div
+          className="w-1 h-1 rounded-full bg-muted animate-bounce"
+          style={{ animationDelay: "300ms" }}
+        />
       </div>
-    </div>
+    </output>
   );
 }
